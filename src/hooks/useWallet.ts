@@ -53,7 +53,7 @@ export function useWallet() {
       setUsdcBalance(usdcBal);
       setUsdcDecimals(decimals);
     } catch (err) {
-      console.error('Error fetching balances', err);
+      // Removed err to avoid BigInt serialization crashes
     }
   }, []);
 
@@ -89,7 +89,7 @@ export function useWallet() {
       } else {
         setError(err?.message || 'Failed to connect wallet');
       }
-      console.error('Connect err:', err);
+      // Removed err directly to avoid BigInt serialization
     } finally {
       setIsConnecting(false);
     }
@@ -185,7 +185,7 @@ export function useWallet() {
          if (chainId === arcTestnet.id) {
             fetchBalances(walletAddress);
          }
-       }).catch(console.error);
+       }).catch(() => {});
     }
   }, []);
 

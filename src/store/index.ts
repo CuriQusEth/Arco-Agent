@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface TransactionRecord {
   hash: string;
@@ -9,6 +9,22 @@ export interface TransactionRecord {
   chainId: number;
   from: string;
 }
+
+const customStorage = createJSONStorage(() => ({
+  getItem: (name) => {
+    const str = localStorage.getItem(name);
+    return str ? JSON.parse(str) : null;
+  },
+  setItem: (name, value) => {
+    localStorage.setItem(
+      name,
+      JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+    );
+  },
+  removeItem: (name) => {
+    localStorage.removeItem(name);
+  },
+}));
 
 interface EscrowState {
   jobId: string | null;
@@ -58,6 +74,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'arco-agent-store',
+      storage: customStorage,
       partialize: (state) => ({ transactions: state.transactions }),
     }
   )
@@ -88,6 +105,7 @@ export const useEscrowStore = create<EscrowState>()(
     }),
     {
       name: 'arco-escrow-state',
+      storage: customStorage,
       partialize: (state) => ({ 
         step: state.step, 
         jobId: state.jobId,

@@ -63,7 +63,7 @@ export function ERC8183Card() {
         });
       }
     } catch (err) {
-      console.error("Failed to read job state", err);
+      // Removed err to avoid BigInt serialization
     }
   };
 
@@ -95,14 +95,6 @@ export function ERC8183Card() {
       if (!publicClient || !walletClient) throw new Error('Clients not initialized');
 
       const txConfig = await prepare();
-
-      console.log(`[VIEM CALL] simulateContract`, {
-         contractAddress: txConfig.address,
-         chainId: await walletClient.getChainId(),
-         functionName: txConfig.functionName,
-         args: txConfig.args,
-         caller: walletAddress 
-      });
 
       // Get gas price directly
       const { request } = await (publicClient as any).simulateContract({
@@ -138,7 +130,7 @@ export function ERC8183Card() {
 
       await onSuccess(receipt);
     } catch (err: any) {
-      console.error(err);
+      // Removed direct console.error(err) to prevent BigInt serialization crash in preview logs
       if (err?.code === 4001) {
         setErrorMsg('Transaction rejected by user.');
       } else {
@@ -256,14 +248,6 @@ export function ERC8183Card() {
       const budget = parseUnits(parsedAmt || '0', 6);
       const escrowAddr = getAddress(sanitizeInput(store.escrowAddress));
 
-      console.log(`[VIEM CALL] readContract`, {
-         contractAddress: addresses.usdcErc20,
-         chainId: await walletClient.getChainId(),
-         functionName: 'allowance',
-         args: [getAddress(walletAddress!), escrowAddr],
-         caller: walletAddress 
-      });
-
       // Phase 1: Approve USDC
       const allowance: any = await (publicClient as any).readContract({
         address: addresses.usdcErc20,
@@ -273,14 +257,6 @@ export function ERC8183Card() {
       });
 
       if (allowance < budget) {
-        console.log(`[VIEM CALL] simulateContract`, {
-           contractAddress: addresses.usdcErc20,
-           chainId: await walletClient.getChainId(),
-           functionName: 'approve',
-           args: [escrowAddr, budget],
-           caller: walletAddress 
-        });
-
         const { request: approveReq } = await (publicClient as any).simulateContract({
           address: addresses.usdcErc20,
           abi: erc20Abi,
@@ -311,14 +287,6 @@ export function ERC8183Card() {
             from: walletAddress!,
         });
       }
-
-      console.log(`[VIEM CALL] simulateContract`, {
-         contractAddress: escrowAddr,
-         chainId: await walletClient.getChainId(),
-         functionName: 'fund',
-         args: [getValidatedJobId(), '0x'],
-         caller: walletAddress 
-      });
 
       // Phase 2: Fund
       const { request: fundReq } = await (publicClient as any).simulateContract({
@@ -352,7 +320,7 @@ export function ERC8183Card() {
       store.setStep(3);
       await checkJobStatus();
     } catch (err: any) {
-        console.error(err);
+        // Removed console.error to avoid serialization crash
         if (err?.code === 4001) setErrorMsg('Transaction rejected by user.');
         else setErrorMsg(err?.message || err?.shortMessage || 'Transaction failed');
     } finally {
