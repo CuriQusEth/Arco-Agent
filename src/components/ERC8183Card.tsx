@@ -27,7 +27,7 @@ export function ERC8183Card() {
     setFormInputs({
        provider: store.provider,
        evaluator: store.evaluator,
-       jobDetailsHash: store.jobDetailsHash,
+       jobDetailsHash: store.jobDetailsHash || '0x' + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join(''),
        budgetAmount: store.budgetAmount,
     });
   }, [store.provider, store.evaluator, store.jobDetailsHash, store.budgetAmount]);
@@ -67,7 +67,7 @@ export function ERC8183Card() {
     }
   };
 
-  const sanitizeInput = (val: string) => val.replace(/[\\s\\u200B-\\u200D\\uFEFF]/g, '');
+  const sanitizeInput = (val?: string) => (val || '').replace(/[\\s\\u200B-\\u200D\\uFEFF]/g, '');
 
   const executeTx = async (
     stepIdx: number, 
@@ -379,10 +379,25 @@ export function ERC8183Card() {
             <div className="w-px bg-stone-800 absolute top-8 bottom-[-24px] -z-10"></div>
           </div>
           <div className={stepCardClass(0)}>
-            <h4 className={`text-lg font-medium mb-4 ${store.step === 0 ? 'text-amber-500' : 'text-stone-300'}`}>Create Job</h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className={`text-lg font-medium ${store.step === 0 ? 'text-amber-500' : 'text-stone-300'}`}>Create Job</h4>
+              {store.step === 0 && walletAddress && (
+                <button 
+                  onClick={() => {
+                    setFormInputs(p => ({...p, provider: walletAddress, evaluator: walletAddress}));
+                    setFieldErrors(e => ({...e, provider: '', evaluator: ''}));
+                  }}
+                  className="text-[10px] uppercase tracking-wider text-amber-500 hover:text-amber-400 font-bold bg-amber-500/10 hover:bg-amber-500/20 px-2 py-1 rounded transition-colors"
+                >
+                  Use My Wallet For Both
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-wider text-stone-500">Provider Address</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase tracking-wider text-stone-500">Provider Address</label>
+                  </div>
                   <input 
                     type="text" 
                     value={formInputs.provider}
