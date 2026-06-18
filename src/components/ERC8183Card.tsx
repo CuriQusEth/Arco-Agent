@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useEscrowStore, useAppStore } from '../store';
 import { addresses, escrowAbi, arcTestnet, erc20Abi } from '../lib/contracts';
-import { getAddress, isAddress, parseUnits, formatUnits, decodeEventLog } from 'viem';
+import { getAddress, isAddress, isHex, parseUnits, formatUnits, decodeEventLog } from 'viem';
 import { CheckCircle2, Circle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export function ERC8183Card() {
@@ -27,7 +27,7 @@ export function ERC8183Card() {
     setFormInputs({
        provider: store.provider,
        evaluator: store.evaluator,
-       jobDetailsHash: store.jobDetailsHash || '0x' + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+       jobDetailsHash: store.jobDetailsHash,
        budgetAmount: store.budgetAmount,
     });
   }, [store.provider, store.evaluator, store.jobDetailsHash, store.budgetAmount]);
@@ -67,7 +67,7 @@ export function ERC8183Card() {
     }
   };
 
-  const sanitizeInput = (val?: string) => (val || '').replace(/[\\s\\u200B-\\u200D\\uFEFF]/g, '');
+  const sanitizeInput = (val?: string) => (val || '').replace(/[\s\u200B-\u200D\uFEFF]/g, '');
 
   const executeTx = async (
     stepIdx: number, 
@@ -79,6 +79,9 @@ export function ERC8183Card() {
       setErrorMsg(null);
       setLoadingStep(stepIdx);
       if (!walletAddress) throw new Error('Wallet not connected');
+      if (!store.escrowAddress || !isAddress(sanitizeInput(store.escrowAddress))) {
+        throw new Error('Valid Target Escrow Contract is required. Please set it in Settings.');
+      }
       await switchToArcTestnet();
 
       const publicClient = getPublicClient();
@@ -140,7 +143,7 @@ export function ERC8183Card() {
     const errors: Record<string, string> = {};
     if (!isAddress(prov, { strict: false })) errors.provider = 'Invalid provider address';
     if (!isAddress(evalAddr, { strict: false })) errors.evaluator = 'Invalid evaluator address';
-    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) errors.jobDetailsHash = 'Invalid 32-byte hash (must be 0x + 64 hex chars)';
+    if (!isHex(hash, { strict: true }) || hash.length !== 66) errors.jobDetailsHash = 'Invalid 32-byte hash (must be 0x + 64 hex chars)';
     
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
