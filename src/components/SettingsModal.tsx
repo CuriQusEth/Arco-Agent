@@ -11,14 +11,14 @@ interface Props {
 
 export function SettingsModal({ isOpen, onClose }: Props) {
   const store = useEscrowStore();
-  const [addrInput, setAddrInput] = useState(store.escrowAddress || addresses.defaultEscrow);
+  const [addrInput, setAddrInput] = useState(store.escrowAddress || addresses.defaultEscrow || '');
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
 
   if (!isOpen) return null;
 
   const handleSave = () => {
-    const clean = addrInput.replace(/[\\s\\u200B-\\u200D\\uFEFF]/g, '');
+    const clean = addrInput.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
     if (!isAddress(clean, { strict: false })) {
       setErr("Invalid checksum or format.");
       return;

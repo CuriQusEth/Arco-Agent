@@ -41,8 +41,8 @@ export const addresses = {
   multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11' as const,
   permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3' as const,
   create2Factory: '0x4e59b44847b379578588920cA78FbF26c0B4956C' as const,
-  // This is a placeholder address for the UI. In a real app, you'd deploy and set this in production.
-  defaultEscrow: '0x0000000000000000000000000000000000000001' as const,
+  // Use import.meta.env.VITE_ESCROW_ADDRESS if you have a deployed contract, else null for UI
+  defaultEscrow: (import.meta.env.VITE_ESCROW_ADDRESS as `0x${string}`) || null,
 };
 
 export const erc20Abi = parseAbi([
