@@ -41,8 +41,8 @@ export const addresses = {
   multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11' as const,
   permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3' as const,
   create2Factory: '0x4e59b44847b379578588920cA78FbF26c0B4956C' as const,
-  // Use import.meta.env.VITE_ESCROW_ADDRESS if you have a deployed contract, else null for UI
-  defaultEscrow: (import.meta.env.VITE_ESCROW_ADDRESS as `0x${string}`) || null,
+  // The official Arc standard Testnet reference ERC-8183 contract
+  defaultEscrow: (import.meta.env.VITE_ESCROW_ADDRESS as `0x${string}`) || '0x0747EEf0706327138c69792bF28Cd525089e4583',
 };
 
 export const erc20Abi = parseAbi([
@@ -54,17 +54,13 @@ export const erc20Abi = parseAbi([
   'function allowance(address owner, address spender) view returns (uint256)',
 ]);
 
-// Generic Agentic Escrow / ERC-8183 style ABI
+// Official ARC ERC-8183 Agentic Escrow ABI
 export const escrowAbi = parseAbi([
-  'function createJob(address provider, address evaluator, bytes32 jobDetailsHash) returns (uint256)',
-  'function setBudget(uint256 jobId, address token, uint256 amount)',
-  'function fundJob(uint256 jobId)',
-  'function submitWork(uint256 jobId, bytes32 resultHash)',
-  'function completeJob(uint256 jobId)',
+  'function createJob(address provider, address evaluator, uint256 expiredAt, string description, address hook) returns (uint256)',
+  'function setBudget(uint256 jobId, uint256 amount, bytes optParams)',
+  'function fund(uint256 jobId, bytes optParams)',
+  'function submit(uint256 jobId, bytes32 deliverable, bytes optParams)',
+  'function complete(uint256 jobId, bytes32 reason, bytes optParams)',
   'function jobs(uint256 jobId) view returns (address provider, address evaluator, address token, uint256 budget, uint8 status)',
-  'event JobCreated(uint256 indexed jobId, address indexed provider, address indexed evaluator, bytes32 jobDetailsHash)',
-  'event BudgetSet(uint256 indexed jobId, address indexed token, uint256 amount)',
-  'event JobFunded(uint256 indexed jobId)',
-  'event WorkSubmitted(uint256 indexed jobId, bytes32 resultHash)',
-  'event JobCompleted(uint256 indexed jobId)'
+  'event JobCreated(uint256 indexed jobId, address indexed provider, address indexed evaluator, bytes32 jobDetailsHash)'
 ]);

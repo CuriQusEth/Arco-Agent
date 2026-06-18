@@ -11,7 +11,7 @@ export interface TransactionRecord {
 }
 
 interface EscrowState {
-  jobId: number | null;
+  jobId: string | null;
   step: number; 
   // 0: Create Job, 1: Set Budget, 2: Fund, 3: Submit Work, 4: Complete Job
   
@@ -24,7 +24,7 @@ interface EscrowState {
   // Custom Escrow Address
   escrowAddress: string;
 
-  setJobId: (id: number | null) => void;
+  setJobId: (id: string | null) => void;
   setStep: (step: number) => void;
   setJobData: (data: Partial<Omit<EscrowState, 'jobId' | 'step' | 'escrowAddress' | 'setJobId' | 'setStep' | 'setJobData' | 'setEscrowAddress'>>) => void;
   setEscrowAddress: (address: string) => void;
@@ -88,6 +88,12 @@ export const useEscrowStore = create<EscrowState>()(
     }),
     {
       name: 'arco-escrow-state',
+      partialize: (state) => ({ 
+        step: state.step, 
+        jobId: state.jobId,
+        escrowAddress: state.escrowAddress
+        // Omit provider, evaluator, jobDetailsHash, budgetAmount to prevent PII persistence locally
+      }),
     }
   )
 );

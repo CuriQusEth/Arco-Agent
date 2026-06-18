@@ -143,7 +143,7 @@ export function ERC8183Card() {
     const errors: Record<string, string> = {};
     if (!isAddress(prov, { strict: false })) errors.provider = 'Invalid provider address';
     if (!isAddress(evalAddr, { strict: false })) errors.evaluator = 'Invalid evaluator address';
-    if (!isHex(hash, { strict: true }) || hash.length !== 66) errors.jobDetailsHash = 'Invalid 32-byte hash (must be 0x + 64 hex chars)';
+    if (!hash) errors.jobDetailsHash = 'Job description/ID is required';
     
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -152,7 +152,13 @@ export function ERC8183Card() {
       address: getAddress(sanitizeInput(store.escrowAddress)),
       abi: escrowAbi,
       functionName: 'createJob',
-      args: [getAddress(prov), getAddress(evalAddr), hash as `0x${string}`]
+      args: [
+        getAddress(prov), 
+        getAddress(evalAddr), 
+        BigInt(Math.floor(Date.now()/1000) + (3600 * 24 * 30)), // expire in 30 days
+        hash, // Use the hash as the description string
+        "0x0000000000000000000000000000000000000000" // No hook
+      ]
     }), async (receipt) => {
       // Parse event to get ID
       for (const log of receipt.logs) {
@@ -163,8 +169,9 @@ export function ERC8183Card() {
              topics: log.topics,
            });
            if (decoded.eventName === 'JobCreated') {
-             const jobId = Number((decoded.args as any).jobId);
-             store.setJobId(jobId);
+             const rawJobId = (decoded.args as any).jobId;
+             const jobIdStr = typeof rawJobId === 'bigint' ? rawJobId.toString() : String(rawJobId);
+             store.setJobId(jobIdStr);
              store.setJobData({
                provider: prov,
                evaluator: evalAddr,
@@ -180,21 +187,29 @@ export function ERC8183Card() {
 
   const getValidatedJobId = () => {
     if (store.jobId === null) throw new Error("No active job ID");
-    const idNum = parseInt(store.jobId as any, 10);
-    if (isNaN(idNum) || idNum <= 0) throw new Error("Invalid Job ID. Must be a positive number.");
-    return BigInt(idNum);
+    try {
+      return BigInt(store.jobId);
+    } catch {
+      throw new Error("Invalid Job ID. Must be a valid positive number.");
+    }
   };
 
   const handleSetBudget = () => {
+    if (walletAddress?.toLowerCase() !== store.provider?.toLowerCase()) {
+      setErrorMsg(`Set Budget must be called by the Provider (${store.provider}). Switch your wallet to proceed.`);
+      return;
+    }
     executeTx(1, 'Set Budget', async () => {
-      const budget = parseUnits(formInputs.budgetAmount.trim() || '0', 6);
+      const cleanBudgetStr = formInputs.budgetAmount.replace(/[^0-9.]/g, '');
+      const parsedAmt = cleanBudgetStr.split('.').length > 2 ? cleanBudgetStr.split('.').slice(0, 2).join('.') : cleanBudgetStr;
+      const budget = parseUnits(parsedAmt || '0', 6);
       if (budget <= 0n) throw new Error("Budget must be > 0");
       
       return {
         address: getAddress(sanitizeInput(store.escrowAddress)),
         abi: escrowAbi,
         functionName: 'setBudget',
-        args: [getValidatedJobId(), addresses.usdcErc20, budget]
+        args: [getValidatedJobId(), budget, '0x']
       };
     }, async () => {
        store.setJobData({ budgetAmount: formInputs.budgetAmount.trim() });
@@ -214,7 +229,9 @@ export function ERC8183Card() {
       const walletClient = getWalletClient();
       if (!publicClient || !walletClient) throw new Error('Clients not initialized');
 
-      const budget = parseUnits(store.budgetAmount || '0', 6);
+      const cleanBudgetStr = store.budgetAmount.replace(/[^0-9.]/g, '');
+      const parsedAmt = cleanBudgetStr.split('.').length > 2 ? cleanBudgetStr.split('.').slice(0, 2).join('.') : cleanBudgetStr;
+      const budget = parseUnits(parsedAmt || '0', 6);
       const escrowAddr = getAddress(sanitizeInput(store.escrowAddress));
 
       // Phase 1: Approve USDC
@@ -261,8 +278,8 @@ export function ERC8183Card() {
       const { request: fundReq } = await (publicClient as any).simulateContract({
          address: escrowAddr,
          abi: escrowAbi,
-         functionName: 'fundJob',
-         args: [getValidatedJobId()],
+         functionName: 'fund',
+         args: [getValidatedJobId(), '0x'],
          account: walletAddress as `0x${string}`,
       });
 
@@ -306,8 +323,8 @@ export function ERC8183Card() {
       return {
         address: getAddress(sanitizeInput(store.escrowAddress)),
         abi: escrowAbi,
-        functionName: 'submitWork',
-        args: [getValidatedJobId(), resultBytes as `0x${string}`]
+        functionName: 'submit',
+        args: [getValidatedJobId(), resultBytes as `0x${string}`, '0x']
       };
     }, async () => {
        store.setStep(4);
@@ -319,8 +336,8 @@ export function ERC8183Card() {
     executeTx(4, 'Complete Job', async () => ({
       address: getAddress(sanitizeInput(store.escrowAddress)),
       abi: escrowAbi,
-      functionName: 'completeJob',
-      args: [getValidatedJobId()]
+      functionName: 'complete',
+      args: [getValidatedJobId(), "0x0000000000000000000000000000000000000000000000000000000000000000", '0x']
     }), async () => {
        store.setStep(5);
        await checkJobStatus();
@@ -426,14 +443,14 @@ export function ERC8183Card() {
                   {fieldErrors.evaluator && <p className="text-[10px] text-red-500 mt-1">{fieldErrors.evaluator}</p>}
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-[10px] uppercase tracking-wider text-stone-500">Job Details Hash (bytes32)</label>
+                  <label className="text-[10px] uppercase tracking-wider text-stone-500">Job Description / Task ID</label>
                   <div className="flex gap-2">
                       <input 
                       type="text" 
                       value={formInputs.jobDetailsHash}
                       onChange={e => {setFormInputs(p => ({...p, jobDetailsHash: e.target.value})); setFieldErrors(e => ({...e, jobDetailsHash: ''}))}}
                       className={`${fieldErrors.jobDetailsHash ? inputErrClass : inputClass} text-[10px]`}
-                      placeholder="0x..." 
+                      placeholder="e.g. Develop AI feature / ipfs://..." 
                       autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
                       disabled={store.step > 0}
                       />

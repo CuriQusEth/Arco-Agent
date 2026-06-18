@@ -17,9 +17,10 @@ export default function App() {
   const store = useEscrowStore();
 
   useEffect(() => {
-    // If you have a specific testnet contract deployed, initialize it here.
-    // Ensure we don't automatically override with a 0x0...1 address anymore.
-  }, []);
+    if (!store.escrowAddress && addresses.defaultEscrow) {
+      store.setEscrowAddress(addresses.defaultEscrow);
+    }
+  }, [store.escrowAddress, store.setEscrowAddress]);
 
   const myTxs = transactions.filter(t => t.from.toLowerCase() === walletAddress?.toLowerCase()).slice(0, 5);
 
