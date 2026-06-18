@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif-display: "Georgia", "Times New Roman", serif;
+}
+
+@layer utilities {
+  .step-active {
+    background-color: #d97706;
+    box-shadow: 0 0 20px rgba(217, 119, 6, 0.3);
+  }
+  .border-subtle {
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+}
