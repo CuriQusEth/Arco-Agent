@@ -42,6 +42,7 @@ export const addresses = {
   permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3' as const,
   create2Factory: '0x4e59b44847b379578588920cA78FbF26c0B4956C' as const,
   // The official Arc standard Testnet reference ERC-8183 contract
+  // @ts-ignore
   defaultEscrow: (import.meta.env.VITE_ESCROW_ADDRESS as `0x${string}`) || '0x0747EEf0706327138c69792bF28Cd525089e4583',
 };
 

@@ -17,7 +17,12 @@ export default function App() {
   const store = useEscrowStore();
 
   useEffect(() => {
-    if (!store.escrowAddress && addresses.defaultEscrow) {
+    if (
+      (!store.escrowAddress || 
+       store.escrowAddress === '0x0000000000000000000000000000000000000001' || 
+       store.escrowAddress === '0x0000000000000000000000000000000000000000') 
+       && addresses.defaultEscrow
+    ) {
       store.setEscrowAddress(addresses.defaultEscrow);
     }
   }, [store.escrowAddress, store.setEscrowAddress]);

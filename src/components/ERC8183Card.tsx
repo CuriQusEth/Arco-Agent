@@ -82,6 +82,12 @@ export function ERC8183Card() {
       if (!store.escrowAddress || !isAddress(sanitizeInput(store.escrowAddress))) {
         throw new Error('Valid Target Escrow Contract is required. Please set it in Settings.');
       }
+      
+      const cleanAddress = sanitizeInput(store.escrowAddress).toLowerCase();
+      if (cleanAddress === '0x0000000000000000000000000000000000000001' || cleanAddress === '0x0000000000000000000000000000000000000000') {
+        throw new Error('Please configure a valid Escrow contract. The current address is a placeholder (0x...1 or 0x...0).');
+      }
+
       await switchToArcTestnet();
 
       const publicClient = getPublicClient();
@@ -89,6 +95,14 @@ export function ERC8183Card() {
       if (!publicClient || !walletClient) throw new Error('Clients not initialized');
 
       const txConfig = await prepare();
+
+      console.log(`[VIEM CALL] simulateContract`, {
+         contractAddress: txConfig.address,
+         chainId: await walletClient.getChainId(),
+         functionName: txConfig.functionName,
+         args: txConfig.args,
+         caller: walletAddress 
+      });
 
       // Get gas price directly
       const { request } = await (publicClient as any).simulateContract({
@@ -229,10 +243,26 @@ export function ERC8183Card() {
       const walletClient = getWalletClient();
       if (!publicClient || !walletClient) throw new Error('Clients not initialized');
 
+      if (!store.escrowAddress || !isAddress(sanitizeInput(store.escrowAddress))) {
+        throw new Error('Valid Target Escrow Contract is required.');
+      }
+      const cleanAddress = sanitizeInput(store.escrowAddress).toLowerCase();
+      if (cleanAddress === '0x0000000000000000000000000000000000000001' || cleanAddress === '0x0000000000000000000000000000000000000000') {
+        throw new Error('Please configure a valid Escrow contract. The current address is a placeholder.');
+      }
+
       const cleanBudgetStr = store.budgetAmount.replace(/[^0-9.]/g, '');
       const parsedAmt = cleanBudgetStr.split('.').length > 2 ? cleanBudgetStr.split('.').slice(0, 2).join('.') : cleanBudgetStr;
       const budget = parseUnits(parsedAmt || '0', 6);
       const escrowAddr = getAddress(sanitizeInput(store.escrowAddress));
+
+      console.log(`[VIEM CALL] readContract`, {
+         contractAddress: addresses.usdcErc20,
+         chainId: await walletClient.getChainId(),
+         functionName: 'allowance',
+         args: [getAddress(walletAddress!), escrowAddr],
+         caller: walletAddress 
+      });
 
       // Phase 1: Approve USDC
       const allowance: any = await (publicClient as any).readContract({
@@ -243,6 +273,14 @@ export function ERC8183Card() {
       });
 
       if (allowance < budget) {
+        console.log(`[VIEM CALL] simulateContract`, {
+           contractAddress: addresses.usdcErc20,
+           chainId: await walletClient.getChainId(),
+           functionName: 'approve',
+           args: [escrowAddr, budget],
+           caller: walletAddress 
+        });
+
         const { request: approveReq } = await (publicClient as any).simulateContract({
           address: addresses.usdcErc20,
           abi: erc20Abi,
@@ -273,6 +311,14 @@ export function ERC8183Card() {
             from: walletAddress!,
         });
       }
+
+      console.log(`[VIEM CALL] simulateContract`, {
+         contractAddress: escrowAddr,
+         chainId: await walletClient.getChainId(),
+         functionName: 'fund',
+         args: [getValidatedJobId(), '0x'],
+         caller: walletAddress 
+      });
 
       // Phase 2: Fund
       const { request: fundReq } = await (publicClient as any).simulateContract({
