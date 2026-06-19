@@ -5,16 +5,17 @@ import { ERC8183Card } from './components/ERC8183Card';
 import { SettingsModal } from './components/SettingsModal';
 import { TxHistoryModal } from './components/TxHistoryModal';
 import { useWallet } from './hooks/useWallet';
-import { Settings, History, Shield, Activity } from 'lucide-react';
+import { Settings, History, Shield, Activity, RefreshCw } from 'lucide-react';
 import { useEscrowStore, useAppStore } from './store';
 import { addresses, arcTestnet } from './lib/contracts';
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const { walletAddress } = useWallet();
-  const { transactions } = useAppStore();
+  const { walletAddress, getPublicClient } = useWallet();
+  const { transactions, myJobs, setMyJobs } = useAppStore();
   const store = useEscrowStore();
+  const [isFetchingJobs, setIsFetchingJobs] = useState(false);
 
   useEffect(() => {
     if (
@@ -27,7 +28,71 @@ export default function App() {
     }
   }, [store.escrowAddress, store.setEscrowAddress]);
 
+  useEffect(() => {
+     if (!walletAddress || !store.escrowAddress) return;
+     const fetchJobs = async () => {
+         const publicClient = getPublicClient();
+         if (!publicClient) return;
+         setIsFetchingJobs(true);
+
+         try {
+             const [clientLogs, providerLogs] = await Promise.all([
+                 publicClient.getLogs({
+                     address: store.escrowAddress as `0x${string}`,
+                     event: {
+                         type: 'event',
+                         name: 'JobCreated',
+                         inputs: [
+                             { type: 'uint256', name: 'jobId', indexed: true },
+                             { type: 'address', name: 'client', indexed: true },
+                             { type: 'address', name: 'provider', indexed: true },
+                             { type: 'address', name: 'evaluator', indexed: false },
+                             { type: 'uint256', name: 'expiredAt', indexed: false },
+                             { type: 'address', name: 'hook', indexed: false },
+                         ],
+                     },
+                     args: { client: walletAddress as `0x${string}` },
+                     fromBlock: 'earliest'
+                 }),
+                 publicClient.getLogs({
+                     address: store.escrowAddress as `0x${string}`,
+                     event: {
+                         type: 'event',
+                         name: 'JobCreated',
+                         inputs: [
+                             { type: 'uint256', name: 'jobId', indexed: true },
+                             { type: 'address', name: 'client', indexed: true },
+                             { type: 'address', name: 'provider', indexed: true },
+                             { type: 'address', name: 'evaluator', indexed: false },
+                             { type: 'uint256', name: 'expiredAt', indexed: false },
+                             { type: 'address', name: 'hook', indexed: false },
+                         ],
+                     },
+                     args: { provider: walletAddress as `0x${string}` },
+                     fromBlock: 'earliest'
+                 })
+             ]);
+
+             const allJobIds = Array.from(new Set([
+                 ...clientLogs.map(l => (l.args as any).jobId?.toString()).filter(Boolean),
+                 ...providerLogs.map(l => (l.args as any).jobId?.toString()).filter(Boolean)
+             ]));
+
+             if (allJobIds.length > 0) {
+                 setMyJobs(walletAddress, allJobIds as string[]);
+             }
+         } catch (e) {
+             console.error("Job fetching fail:", e);
+         } finally {
+             setIsFetchingJobs(false);
+         }
+     };
+
+     fetchJobs();
+  }, [walletAddress, store.escrowAddress]);
+
   const myTxs = transactions.filter(t => t.from.toLowerCase() === walletAddress?.toLowerCase()).slice(0, 5);
+  const activeJobs = walletAddress ? (myJobs[walletAddress.toLowerCase()] || []) : [];
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[#050505] font-sans text-stone-200">
@@ -78,16 +143,36 @@ export default function App() {
                 <BalanceWidget />
               </section>
               <section>
-                <h3 className="mb-4 text-[10px] uppercase tracking-widest text-stone-500">Registry Stats</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="text-center rounded-lg border border-subtle bg-stone-900/40 p-3">
-                    <div className="text-xl font-bold text-stone-200">12</div>
-                    <div className="text-[10px] text-stone-500">JOBS CLOSED</div>
-                  </div>
-                  <div className="text-center rounded-lg border border-subtle bg-stone-900/40 p-3">
-                    <div className="text-xl font-bold text-stone-200">98%</div>
-                    <div className="text-[10px] text-stone-500">TRUST RATE</div>
-                  </div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-[10px] uppercase tracking-widest text-stone-500">My Jobs</h3>
+                  {isFetchingJobs && <RefreshCw className="w-3 h-3 text-amber-500 animate-spin" />}
+                </div>
+                <div className="space-y-2">
+                  {activeJobs.length === 0 ? (
+                      <div className="text-xs text-stone-500 italic p-3 rounded-lg border border-subtle bg-stone-900/20">
+                         No active jobs found...
+                      </div>
+                  ) : (
+                      activeJobs.map((id) => (
+                          <div key={id} 
+                               onClick={() => store.setJobId(id.toString())}
+                               className={`cursor-pointer p-3 rounded-lg border ${store.jobId === id ? 'border-amber-600/50 bg-stone-900/60' : 'border-stone-800 bg-stone-900/30 hover:border-stone-600'} transition-colors`}>
+                             <div className="flex justify-between items-center mb-1">
+                               <div className="text-xs font-bold text-stone-200">JOB #{id}</div>
+                             </div>
+                             <div className="text-[10px] text-stone-500">Click to view details</div>
+                          </div>
+                      ))
+                  )}
+                  <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const val = new FormData(e.currentTarget).get('jobid') as string;
+                      if (/^\d+$/.test(val)) store.setJobId(val);
+                      e.currentTarget.reset();
+                  }} className="mt-4 pt-4 border-t border-stone-800 flex items-center gap-2">
+                       <input type="text" name="jobid" placeholder="Load by ID..." className="flex-1 rounded border border-subtle bg-stone-950 px-2.5 py-1.5 text-xs text-stone-200 outline-none focus:border-amber-600" />
+                       <button type="submit" className="shrink-0 px-3 py-1.5 rounded bg-stone-800 text-xs text-stone-300 hover:bg-stone-700 hover:text-white transition-colors">Load</button>
+                  </form>
                 </div>
               </section>
             </div>
@@ -120,7 +205,7 @@ export default function App() {
                  <div className="text-xs text-stone-600 italic">No recent transactions.</div>
                ) : (
                  myTxs.map((tx, idx) => (
-                    <div key={tx.hash} className={`relative pl-4 border-l ${idx === 0 ? 'border-stone-600' : 'border-stone-800 opacity-60'}`}>
+                    <div key={`${tx.hash}-${idx}`} className={`relative pl-4 border-l ${idx === 0 ? 'border-stone-600' : 'border-stone-800 opacity-60'}`}>
                       <div className={`absolute -left-[5px] top-1 h-2 w-2 rounded-full ${tx.status === 'success' ? 'bg-green-500' : tx.status === 'pending' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}></div>
                       <div className="text-xs font-medium text-stone-300">{tx.action}</div>
                       <div className="text-[10px] text-stone-500 font-mono mt-1 w-full truncate cursor-pointer hover:text-stone-300 transition-colors" title={tx.hash} onClick={() => window.open(`${arcTestnet.blockExplorers.default.url}/tx/${tx.hash}`)}>
@@ -136,11 +221,10 @@ export default function App() {
               <div className="rounded-lg border border-subtle bg-stone-900/50 p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Activity className="w-3 h-3 text-amber-500" />
-                  <span className="text-[10px] font-bold text-amber-500">DIAGNOSTICS</span>
+                  <span className="text-[10px] font-bold text-amber-500">NETWORK</span>
                 </div>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-[10px] text-stone-500"><span>RPC latency</span><span className="text-stone-300">24ms</span></div>
-                  <div className="flex justify-between text-[10px] text-stone-500"><span>Websocket</span><span className="text-green-500 font-medium">Connected</span></div>
+                  <div className="flex justify-between text-[10px] text-stone-500"><span>Connection</span><span className="text-green-500 font-medium">Online</span></div>
                 </div>
               </div>
             </div>

@@ -40,8 +40,8 @@ export function TxHistoryModal({ isOpen, onClose }: Props) {
             </div>
           ) : (
             <div className="space-y-3">
-              {myTxs.map((tx) => (
-                <div key={tx.hash} className="flex flex-col p-4 bg-stone-950 rounded-lg border border-stone-800/50">
+              {myTxs.map((tx, idx) => (
+                <div key={`${tx.hash}-${idx}`} className="flex flex-col p-4 bg-stone-950 rounded-lg border border-stone-800/50">
                   <div className="flex items-center justify-between mb-2">
                      <div className="flex items-center gap-2">
                         {getStatusIcon(tx.status)}

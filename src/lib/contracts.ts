@@ -62,6 +62,6 @@ export const escrowAbi = parseAbi([
   'function fund(uint256 jobId, bytes optParams)',
   'function submit(uint256 jobId, bytes32 deliverable, bytes optParams)',
   'function complete(uint256 jobId, bytes32 reason, bytes optParams)',
-  'function jobs(uint256 jobId) view returns (address provider, address evaluator, address token, uint256 budget, uint8 status)',
-  'event JobCreated(uint256 indexed jobId, address indexed provider, address indexed evaluator, string description, address hook)'
+  'function getJob(uint256 jobId) view returns (uint256 id, address client, address provider, address evaluator, string description, uint256 budget, uint256 expiredAt, uint8 status, address hook)',
+  'event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)'
 ]);

@@ -6,8 +6,8 @@ import { getAddress, isAddress, isHex, parseUnits, formatUnits, decodeEventLog }
 import { CheckCircle2, Circle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export function ERC8183Card() {
-  const { walletAddress, getPublicClient, getWalletClient, switchToArcTestnet } = useWallet();
-  const { addTransaction } = useAppStore();
+  const { walletAddress, nativeBalance, usdcBalance, getPublicClient, getWalletClient, switchToArcTestnet } = useWallet();
+  const { addTransaction, updateTransaction } = useAppStore();
   const store = useEscrowStore();
   
   const [loadingStep, setLoadingStep] = useState<number | null>(null);
@@ -19,9 +19,29 @@ export function ERC8183Card() {
     evaluator: store.evaluator,
     jobDetailsHash: store.jobDetailsHash,
     budgetAmount: store.budgetAmount,
+    hookAddress: '',
   });
 
-  const [jobState, setJobState] = useState<{status?: number, budget?: bigint, token?: string} | null>(null);
+  const [jobState, setJobState] = useState<{status?: number, budget?: bigint, token?: string, expiredAt?: bigint} | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (jobState?.expiredAt) {
+      const calculateTimeInfo = () => {
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = Number(jobState.expiredAt);
+        const diff = expiresAt - now;
+        setTimeRemaining(diff > 0 ? diff : 0);
+      };
+      
+      calculateTimeInfo();
+      interval = setInterval(calculateTimeInfo, 1000);
+    } else {
+       setTimeRemaining(null);
+    }
+    return () => clearInterval(interval);
+  }, [jobState?.expiredAt]);
 
   useEffect(() => {
     setFormInputs({
@@ -42,28 +62,56 @@ export function ERC8183Card() {
   const checkJobStatus = async () => {
     if (store.jobId === null || !store.escrowAddress) return;
     try {
+      setErrorMsg(null);
       const publicClient = getPublicClient();
       if (!publicClient) return;
       
-      const idNum = parseInt(store.jobId as any, 10);
-      if (isNaN(idNum) || idNum <= 0) return;
+      let idBigInt: bigint;
+      try {
+        idBigInt = BigInt(store.jobId);
+      } catch (e) {
+        setErrorMsg("Invalid Job ID format.");
+        return;
+      }
 
       const data = await (publicClient as any).readContract({
         address: store.escrowAddress as `0x${string}`,
         abi: escrowAbi,
-        functionName: 'jobs',
-        args: [BigInt(idNum)]
+        functionName: 'getJob',
+        args: [idBigInt]
       });
 
       if (data) {
         setJobState({
-          token: data[2],
-          budget: data[3],
-          status: data[4]
+          token: '0x3600000000000000000000000000000000000000', 
+          budget: data[5],
+          status: data[7],
+          expiredAt: data[6]
         });
+        
+        // Sync local step with on-chain truth
+        const status = data[7];
+        const budget = data[5];
+        
+        if (status === 0 /* Open */) {
+            if (budget === 0n) {
+                 store.setStep(1); // Needs budget
+            } else {
+                 store.setStep(2); // Needs funding
+            }
+        } else if (status === 1 /* Funded */) {
+            store.setStep(3); // Needs submission
+        } else if (status === 2 /* Submitted */) {
+            store.setStep(4); // Needs completion
+        } else if (status === 3 /* Completed */) {
+            store.setStep(5); // Done
+        } else if (status === 4 /* Rejected */ || status === 5 /* Expired */) {
+            store.setStep(5); // Done
+        }
       }
-    } catch (err) {
-      // Removed err to avoid BigInt serialization
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(`Failed to read job state: ${err.shortMessage || err.message}`);
     }
   };
 
@@ -94,6 +142,12 @@ export function ERC8183Card() {
       const walletClient = getWalletClient();
       if (!publicClient || !walletClient) throw new Error('Clients not initialized');
 
+      // Verify chain ID actually changed before simulating/signing
+      const currentChainId = await (walletClient as any).getChainId();
+      if (currentChainId !== arcTestnet.id) {
+         throw new Error(`Wallet is still on chainId ${currentChainId}. Please switch to Arc Testnet (${arcTestnet.id}) in your wallet.`);
+      }
+
       const txConfig = await prepare();
 
       // Get gas price directly
@@ -119,13 +173,8 @@ export function ERC8183Card() {
          throw new Error(`Transaction reverted: ${hash}`);
       }
 
-      addTransaction({
-        hash,
-        action: actionName,
-        timestamp: Date.now(),
+      updateTransaction(hash, {
         status: 'success',
-        chainId: arcTestnet.id,
-        from: walletAddress,
       });
 
       await onSuccess(receipt);
@@ -145,14 +194,38 @@ export function ERC8183Card() {
     const prov = sanitizeInput(formInputs.provider);
     const evalAddr = sanitizeInput(formInputs.evaluator);
     const hash = sanitizeInput(formInputs.jobDetailsHash);
+    const hookStr = sanitizeInput(formInputs.hookAddress);
 
     const errors: Record<string, string> = {};
     if (!isAddress(prov, { strict: false })) errors.provider = 'Invalid provider address';
     if (!isAddress(evalAddr, { strict: false })) errors.evaluator = 'Invalid evaluator address';
     if (!hash) errors.jobDetailsHash = 'Job description/ID is required';
+    if (hookStr && !isAddress(hookStr, { strict: false })) errors.hookAddress = 'Invalid hook address';
     
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
+
+    // Check if hook is a contract
+    if (hookStr && hookStr !== '0x0000000000000000000000000000000000000000') {
+      const publicClient = getPublicClient();
+      if (publicClient) {
+        const code = await publicClient.getBytecode({ address: hookStr as `0x${string}` });
+        if (!code || code === '0x') {
+           setErrorMsg('Hook address must be a deployed contract, not an EOA.');
+           return;
+        }
+      }
+    }
+
+    let bytes32Hash = hash;
+    if (!bytes32Hash.startsWith('0x') || bytes32Hash.length !== 66) {
+        if (!bytes32Hash.startsWith('0x')) {
+            bytes32Hash = "0x" + Array.from(new TextEncoder().encode(bytes32Hash))
+              .map(b => b.toString(16).padStart(2, '0')).join('').padEnd(64, '0').slice(0, 64);
+        } else {
+            bytes32Hash = bytes32Hash.padEnd(66, '0').slice(0, 66);
+        }
+    }
 
     executeTx(0, 'Create Job', async () => ({
       address: getAddress(sanitizeInput(store.escrowAddress)),
@@ -162,12 +235,19 @@ export function ERC8183Card() {
         getAddress(prov), 
         getAddress(evalAddr), 
         BigInt(Math.floor(Date.now()/1000) + (3600 * 24 * 30)), // expire in 30 days
-        hash, // Use the hash as the description string
-        "0x0000000000000000000000000000000000000000" // No hook
+        hash, 
+        hookStr ? getAddress(hookStr) : "0x0000000000000000000000000000000000000000"
       ]
     }), async (receipt) => {
       // Parse event to get ID
+      let foundJobId = false;
+      let rawFallbackJobId: string | null = null;
+
       for (const log of receipt.logs) {
+        if (log.topics && log.topics.length > 1) {
+           // capture first indexed param just in case ABI decoding fails
+           rawFallbackJobId = BigInt(log.topics[1] as string).toString();
+        }
         try {
            const decoded: any = decodeEventLog({
              abi: escrowAbi,
@@ -179,15 +259,35 @@ export function ERC8183Card() {
              const jobIdStr = typeof rawJobId === 'bigint' ? rawJobId.toString() : String(rawJobId);
              store.setJobId(jobIdStr);
              store.setJobData({
+               client: walletAddress || prov,
                provider: prov,
                evaluator: evalAddr,
                jobDetailsHash: hash
              });
              store.setStep(1);
+             foundJobId = true;
              break;
            }
-        } catch (e) {}
+        } catch (e) {
+           console.error("ABI Decoding failed for a log", e);
+        }
       }
+
+      if (!foundJobId && rawFallbackJobId) {
+          // If strictly valid decoding failed (perhaps string vs bytes32 ABI mismatch),
+          // fallback to the first indexed param of the logs.
+          store.setJobId(rawFallbackJobId);
+          store.setJobData({
+            client: walletAddress || prov,
+            provider: prov,
+            evaluator: evalAddr,
+            jobDetailsHash: hash
+          });
+          store.setStep(1);
+          foundJobId = true;
+      }
+
+      if (!foundJobId) throw new Error("Could not extract Job ID from transaction logs. Is ABI correct?");
     });
   };
 
@@ -226,6 +326,10 @@ export function ERC8183Card() {
 
   const handleFundEscrow = async () => {
     if (!store.jobId) return;
+    if (walletAddress?.toLowerCase() !== store.client?.toLowerCase()) {
+      setErrorMsg(`Only the Client (${store.client}) can fund the job.`);
+      return;
+    }
 
     try {
       setErrorMsg(null);
@@ -278,13 +382,8 @@ export function ERC8183Card() {
         const appReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
         if (appReceipt.status === 'reverted') throw new Error('USDC Approval Reverted');
         
-        addTransaction({
-            hash: approveHash,
-            action: 'Approve USDC',
-            timestamp: Date.now(),
+        updateTransaction(approveHash, {
             status: 'success',
-            chainId: arcTestnet.id,
-            from: walletAddress!,
         });
       }
 
@@ -309,13 +408,8 @@ export function ERC8183Card() {
       const fundReceipt = await publicClient.waitForTransactionReceipt({ hash: fundHash });
       if (fundReceipt.status === 'reverted') throw new Error('Fund Job Reverted');
       
-      addTransaction({
-            hash: fundHash,
-            action: 'Fund Job',
-            timestamp: Date.now(),
+      updateTransaction(fundHash, {
             status: 'success',
-            chainId: arcTestnet.id,
-            from: walletAddress!,
       });
       store.setStep(3);
       await checkJobStatus();
@@ -329,16 +423,29 @@ export function ERC8183Card() {
   };
 
   const handleSubmitWork = () => {
+    if (walletAddress?.toLowerCase() !== store.provider?.toLowerCase()) {
+      setErrorMsg(`Only the Provider (${store.provider}) can submit work.`);
+      return;
+    }
     executeTx(3, 'Submit Work', async () => {
-      // Create a dummy result hash for this demo
-      const resultBytes = "0x" + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-         .map(b => b.toString(16).padStart(2, '0')).join('');
+      let deliverableBytes = store.deliverable?.trim();
+      if (!deliverableBytes) {
+        throw new Error("Deliverable payload is required (e.g. IPFS hash)");
+      }
+      if (!deliverableBytes.startsWith('0x') || deliverableBytes.length !== 66) {
+         if (!deliverableBytes.startsWith('0x')) {
+            deliverableBytes = "0x" + Array.from(new TextEncoder().encode(deliverableBytes))
+               .map(b => b.toString(16).padStart(2, '0')).join('').padEnd(64, '0').slice(0, 64);
+         } else {
+            deliverableBytes = deliverableBytes.padEnd(66, '0').slice(0, 66);
+         }
+      }
          
       return {
         address: getAddress(sanitizeInput(store.escrowAddress)),
         abi: escrowAbi,
         functionName: 'submit',
-        args: [getValidatedJobId(), resultBytes as `0x${string}`, '0x']
+        args: [getValidatedJobId(), deliverableBytes as `0x${string}`, '0x']
       };
     }, async () => {
        store.setStep(4);
@@ -347,12 +454,31 @@ export function ERC8183Card() {
   };
 
   const handleCompleteJob = () => {
-    executeTx(4, 'Complete Job', async () => ({
-      address: getAddress(sanitizeInput(store.escrowAddress)),
-      abi: escrowAbi,
-      functionName: 'complete',
-      args: [getValidatedJobId(), "0x0000000000000000000000000000000000000000000000000000000000000000", '0x']
-    }), async () => {
+    const isClient = walletAddress?.toLowerCase() === store.client?.toLowerCase();
+    const isEvaluator = walletAddress?.toLowerCase() === store.evaluator?.toLowerCase();
+    
+    if (!isClient && !isEvaluator) {
+      setErrorMsg(`Only the Client (${store.client}) or Evaluator (${store.evaluator}) can complete this job.`);
+      return;
+    }
+    executeTx(4, 'Complete Job', async () => {
+      let reasonBytes = "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
+      if (store.completionReason?.trim()) {
+         let rawReason = store.completionReason.trim();
+         if (!rawReason.startsWith('0x')) {
+             reasonBytes = ("0x" + Array.from(new TextEncoder().encode(rawReason))
+               .map(b => b.toString(16).padStart(2, '0')).join('')).padEnd(66, '0').slice(0, 66) as `0x${string}`;
+         } else {
+             reasonBytes = rawReason.padEnd(66, '0').slice(0, 66) as `0x${string}`;
+         }
+      }
+      return {
+        address: getAddress(sanitizeInput(store.escrowAddress)),
+        abi: escrowAbi,
+        functionName: 'complete',
+        args: [getValidatedJobId(), reasonBytes, '0x']
+      };
+    }, async () => {
        store.setStep(5);
        await checkJobStatus();
     });
@@ -392,8 +518,18 @@ export function ERC8183Card() {
           <h1 className="font-serif-display text-4xl italic text-stone-100">Escrow Lifecycle</h1>
           <p className="mt-2 text-stone-500 text-sm">ERC-8183 Standard Agentic Workflow</p>
         </div>
-        <div className="rounded bg-amber-600/10 px-3 py-1.5 text-[10px] font-bold text-amber-500 ring-1 ring-amber-600/30">
-          JOB ID: {store.jobId !== null ? store.jobId : "PENDING"}
+        <div className="flex flex-col items-end gap-2">
+            <div className="rounded bg-amber-600/10 px-3 py-1.5 text-[10px] font-bold text-amber-500 ring-1 ring-amber-600/30">
+              JOB ID: {store.jobId !== null ? store.jobId : "PENDING"}
+            </div>
+            {timeRemaining !== null && store.step < 5 && (
+                <div className={`rounded px-3 py-1.5 text-[10px] font-bold ring-1 
+                    ${timeRemaining === 0 ? 'bg-red-500/10 text-red-500 ring-red-500/30' : 
+                      timeRemaining < 3600 ? 'bg-amber-500/10 text-amber-500 ring-amber-500/30' : 
+                      'bg-stone-500/10 text-stone-400 ring-stone-800'}`}>
+                    {timeRemaining === 0 ? 'EXPIRED' : `EXPIRES IN ${Math.floor(timeRemaining / 3600)}H ${Math.floor((timeRemaining % 3600) / 60)}M`}
+                </div>
+            )}
         </div>
       </div>
 
@@ -404,6 +540,19 @@ export function ERC8183Card() {
                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                <span className="break-all">{errorMsg}</span>
             </div>
+        )}
+
+        {(nativeBalance === 0n || (usdcBalance !== null && usdcBalance < parseUnits("1", 6))) && (
+           <div className="bg-blue-500/10 border border-blue-500/30 text-blue-400 px-4 py-3 rounded-xl text-sm flex flex-col gap-2 animate-in fade-in slide-in-from-top-2 mb-2">
+              <div className="flex gap-3 items-start">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <span>Your wallet is running low on Arc Testnet ARC or USDC. You might need more funds to complete transactions.</span>
+              </div>
+              <div className="flex gap-4 ml-8 text-[11px] uppercase tracking-wider font-bold">
+                  <a href="https://faucet.circle.com" target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 underline underline-offset-4">Public Faucet</a>
+                  <a href="https://console.circle.com/faucet" target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 underline underline-offset-4">Console Faucet</a>
+              </div>
+           </div>
         )}
 
         {/* Step 1: Create Job */}
@@ -476,6 +625,19 @@ export function ERC8183Card() {
                   </div>
                   {fieldErrors.jobDetailsHash && <p className="text-[10px] text-red-500 mt-1">{fieldErrors.jobDetailsHash}</p>}
                 </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[10px] uppercase tracking-wider text-stone-500" title="Optional contract called by the escrow during job lifecycle events">Hook Contract (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={formInputs.hookAddress}
+                    onChange={e => {setFormInputs(p => ({...p, hookAddress: e.target.value})); setFieldErrors(e => ({...e, hookAddress: ''}))}}
+                    className={fieldErrors.hookAddress ? inputErrClass : inputClass}
+                    placeholder="0x... (Advanced use only)" 
+                    autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
+                    disabled={store.step > 0}
+                  />
+                  {fieldErrors.hookAddress && <p className="text-[10px] text-red-500 mt-1">{fieldErrors.hookAddress}</p>}
+                </div>
             </div>
             {store.step === 0 && (
               <button 
@@ -517,7 +679,7 @@ export function ERC8183Card() {
             </div>
             {store.step === 1 && (
               <button 
-                onClick={handleSetBudget} disabled={loadingStep === 1}
+                onClick={handleSetBudget} disabled={loadingStep === 1 || timeRemaining === 0}
                 className={btnClass}
               >
                 {loadingStep === 1 ? 'Setting...' : 'Submit Tx: Set USDC Budget'}
@@ -539,7 +701,7 @@ export function ERC8183Card() {
              </p>
              {store.step === 2 && (
                <button 
-                 onClick={handleFundEscrow} disabled={loadingStep === 2}
+                 onClick={handleFundEscrow} disabled={loadingStep === 2 || timeRemaining === 0}
                  className={btnClass}
                >
                  {loadingStep === 2 ? 'Funding (2 Txs)...' : 'Approve & Fund USDC'}
@@ -559,9 +721,21 @@ export function ERC8183Card() {
              <p className="text-xs text-stone-500 mb-4 leading-relaxed">
                 Typically dispatched by the Provider wallet to signal delivery completion.
              </p>
+             <div className="space-y-1.5 mb-4">
+               <label className="text-[10px] uppercase tracking-wider text-stone-500">Deliverable Hash or URL</label>
+               <input 
+                 type="text" 
+                 value={store.deliverable || ''}
+                 onChange={e => store.setJobData({ deliverable: e.target.value })}
+                 className={inputClass}
+                 placeholder="e.g. ipfs://..., https://..." 
+                 autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
+                 disabled={store.step > 3}
+               />
+             </div>
              {store.step === 3 && (
                <button 
-                 onClick={handleSubmitWork} disabled={loadingStep === 3}
+                 onClick={handleSubmitWork} disabled={loadingStep === 3 || timeRemaining === 0}
                  className={btnClass}
                >
                  {loadingStep === 3 ? 'Submitting...' : 'Submit Tx: Upload Result'}
@@ -580,9 +754,21 @@ export function ERC8183Card() {
              <p className="text-xs text-stone-500 mb-4 leading-relaxed">
                 Authorized Evaluator validates work and releases the locked USDC payout.
              </p>
+             <div className="space-y-1.5 mb-4">
+               <label className="text-[10px] uppercase tracking-wider text-stone-500">Reason (Optional)</label>
+               <input 
+                 type="text" 
+                 value={store.completionReason || ''}
+                 onChange={e => store.setJobData({ completionReason: e.target.value })}
+                 className={inputClass}
+                 placeholder="e.g. Approved, looks great!" 
+                 autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
+                 disabled={store.step > 4}
+               />
+             </div>
              {store.step === 4 && (
                <button 
-                 onClick={handleCompleteJob} disabled={loadingStep === 4}
+                 onClick={handleCompleteJob} disabled={loadingStep === 4 || timeRemaining === 0}
                  className={btnClass}
                >
                  {loadingStep === 4 ? 'Completing...' : 'Submit Tx: Complete Escrow'}

@@ -10,21 +10,9 @@ export interface TransactionRecord {
   from: string;
 }
 
-const customStorage = createJSONStorage(() => ({
-  getItem: (name) => {
-    const str = localStorage.getItem(name);
-    return str ? JSON.parse(str) : null;
-  },
-  setItem: (name, value) => {
-    localStorage.setItem(
-      name,
-      JSON.stringify(value, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
-    );
-  },
-  removeItem: (name) => {
-    localStorage.removeItem(name);
-  },
-}));
+const customStorage = createJSONStorage(() => localStorage, {
+  replacer: (_, v) => (typeof v === 'bigint' ? v.toString() : v),
+});
 
 interface EscrowState {
   jobId: string | null;
@@ -32,10 +20,13 @@ interface EscrowState {
   // 0: Create Job, 1: Set Budget, 2: Fund, 3: Submit Work, 4: Complete Job
   
   // Job Data
+  client: string;
   provider: string;
   evaluator: string;
   jobDetailsHash: string;
   budgetAmount: string;
+  deliverable: string;
+  completionReason: string;
   
   // Custom Escrow Address
   escrowAddress: string;
@@ -52,11 +43,14 @@ interface AppStore {
   chainId: number | null;
   
   transactions: TransactionRecord[];
+  myJobs: Record<string, string[]>; // wallet address -> array of job IDs
   addTransaction: (tx: TransactionRecord) => void;
   updateTransaction: (hash: string, updates: Partial<TransactionRecord>) => void;
   clearTransactions: () => void;
 
   setWallet: (address: string | null, chainId: number | null) => void;
+  addMyJob: (wallet: string, jobId: string) => void;
+  setMyJobs: (wallet: string, jobIds: string[]) => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -65,17 +59,28 @@ export const useAppStore = create<AppStore>()(
       walletAddress: null,
       chainId: null,
       transactions: [],
+      myJobs: {},
       addTransaction: (tx) => set((state) => ({ transactions: [tx, ...state.transactions] })),
       updateTransaction: (hash, updates) => set((state) => ({
         transactions: state.transactions.map((t) => (t.hash === hash ? { ...t, ...updates } : t)),
       })),
       clearTransactions: () => set({ transactions: [] }),
       setWallet: (address, chainId) => set({ walletAddress: address, chainId }),
+      addMyJob: (wallet, jobId) => set((state) => {
+         const w = wallet.toLowerCase();
+         const jobs = state.myJobs[w] || [];
+         if (jobs.includes(jobId)) return state;
+         return { myJobs: { ...state.myJobs, [w]: [...jobs, jobId] } };
+      }),
+      setMyJobs: (wallet, jobIds) => set((state) => {
+         const w = wallet.toLowerCase();
+         return { myJobs: { ...state.myJobs, [w]: jobIds } };
+      }),
     }),
     {
       name: 'arco-agent-store',
       storage: customStorage,
-      partialize: (state) => ({ transactions: state.transactions }),
+      partialize: (state) => ({ transactions: state.transactions, myJobs: state.myJobs }),
     }
   )
 );
@@ -85,10 +90,13 @@ export const useEscrowStore = create<EscrowState>()(
     (set) => ({
       jobId: null,
       step: 0,
+      client: '',
       provider: '',
       evaluator: '',
       jobDetailsHash: '',
       budgetAmount: '',
+      deliverable: '',
+      completionReason: '',
       escrowAddress: '',
       setJobId: (jobId) => set({ jobId }),
       setStep: (step) => set({ step }),
@@ -97,10 +105,13 @@ export const useEscrowStore = create<EscrowState>()(
       resetJob: () => set({
         jobId: null,
         step: 0,
+        client: '',
         provider: '',
         evaluator: '',
         jobDetailsHash: '',
         budgetAmount: '',
+        deliverable: '',
+        completionReason: '',
       }),
     }),
     {
@@ -109,8 +120,13 @@ export const useEscrowStore = create<EscrowState>()(
       partialize: (state) => ({ 
         step: state.step, 
         jobId: state.jobId,
-        escrowAddress: state.escrowAddress
-        // Omit provider, evaluator, jobDetailsHash, budgetAmount to prevent PII persistence locally
+        escrowAddress: state.escrowAddress,
+        client: state.client,
+        provider: state.provider,
+        evaluator: state.evaluator,
+        budgetAmount: state.budgetAmount,
+        deliverable: state.deliverable,
+        completionReason: state.completionReason
       }),
     }
   )
