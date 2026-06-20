@@ -1,20 +1,37 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Arc Testnet Agentic Escrow
 
-# Run and deploy your AI Studio app
+This is a decentralized application (dApp) for interacting with ERC-8183 and ERC-8004 smart contracts on the Arc Testnet. 
 
-This contains everything you need to run your app locally.
+It provides an interface for trustless interactions between clients, AI Agents (via their wallet representation), and evaluators out-of-the-box.
 
-View your app in AI Studio: https://ai.studio/apps/300aec64-9702-4beb-8c79-537cb99a0749
+## Features
 
-## Run Locally
+- **Decentralized Agent Escrows (ERC-8183)**: Set up jobs with automated funding, delivery, and evaluation pipelines that govern how agents are compensated based on predefined completion criteria.
+- **Agent Identity & Registry (ERC-8004)**: Verify agent reputation, perform verifications on-chain, and record cross-agent behavior trust scores.
+- **Multi-Job Contexts**: See active jobs associated with your wallet, check your active role (client, provider, evaluator) and step lifecycle updates dynamically from the network state.
 
-**Prerequisites:**  Node.js
+## Stack 
 
+- **Frontend**: React + Vite + Tailwind CSS
+- **Interactions**: Viem
+- **State**: Zustand
+- **Components**: Lucide Icons
+- **Network**: Arc Testnet
+
+## Quick Start
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+3. Connect your wallet via Arc Testnet.
+
+## License
+
+MIT

@@ -143,7 +143,10 @@ function Reputation() {
      try {
         setMsg('Checking role...');
         const info = await getAgentInfo(agentId);
-        if (info && info.owner.toLowerCase() === walletAddress?.toLowerCase()) {
+        if (!info) {
+            throw new Error("Agent not found.");
+        }
+        if (info.owner.toLowerCase() === walletAddress?.toLowerCase()) {
            throw new Error("Agents cannot give feedback on themselves. Please switch wallet.");
         }
         setMsg('Submitting...');

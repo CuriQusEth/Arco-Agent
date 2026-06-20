@@ -51,7 +51,7 @@ export default function App() {
              
              for (let i = 0; i < MAX_CHUNKS; i++) {
                  if (currentTo < 0n) break;
-                 const currentFrom = currentTo > 10000n ? currentTo - 10000n : 0n;
+                 const currentFrom = currentTo > 9000n ? currentTo - 9000n : 0n;
                  
                  const [cLogs, pLogs] = await Promise.all([
                      (publicClient as any).getLogs({
