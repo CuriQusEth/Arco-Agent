@@ -4,14 +4,16 @@ import { BalanceWidget } from './components/BalanceWidget';
 import { ERC8183Card } from './components/ERC8183Card';
 import { SettingsModal } from './components/SettingsModal';
 import { TxHistoryModal } from './components/TxHistoryModal';
+import { AgentsPage } from './components/AgentsPage';
 import { useWallet } from './hooks/useWallet';
-import { Settings, History, Shield, Activity, RefreshCw } from 'lucide-react';
+import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot } from 'lucide-react';
 import { useEscrowStore, useAppStore } from './store';
 import { addresses, arcTestnet } from './lib/contracts';
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [currentView, setCurrentView] = useState<'escrow' | 'agents'>('escrow');
   const { walletAddress, getPublicClient } = useWallet();
   const { transactions, myJobs, setMyJobs } = useAppStore();
   const store = useEscrowStore();
@@ -36,46 +38,48 @@ export default function App() {
          setIsFetchingJobs(true);
 
          try {
-             const [clientLogs, providerLogs] = await Promise.all([
-                 publicClient.getLogs({
-                     address: store.escrowAddress as `0x${string}`,
-                     event: {
-                         type: 'event',
-                         name: 'JobCreated',
-                         inputs: [
-                             { type: 'uint256', name: 'jobId', indexed: true },
-                             { type: 'address', name: 'client', indexed: true },
-                             { type: 'address', name: 'provider', indexed: true },
-                             { type: 'address', name: 'evaluator', indexed: false },
-                             { type: 'uint256', name: 'expiredAt', indexed: false },
-                             { type: 'address', name: 'hook', indexed: false },
-                         ],
-                     },
-                     args: { client: walletAddress as `0x${string}` },
-                     fromBlock: 'earliest'
-                 }),
-                 publicClient.getLogs({
-                     address: store.escrowAddress as `0x${string}`,
-                     event: {
-                         type: 'event',
-                         name: 'JobCreated',
-                         inputs: [
-                             { type: 'uint256', name: 'jobId', indexed: true },
-                             { type: 'address', name: 'client', indexed: true },
-                             { type: 'address', name: 'provider', indexed: true },
-                             { type: 'address', name: 'evaluator', indexed: false },
-                             { type: 'uint256', name: 'expiredAt', indexed: false },
-                             { type: 'address', name: 'hook', indexed: false },
-                         ],
-                     },
-                     args: { provider: walletAddress as `0x${string}` },
-                     fromBlock: 'earliest'
-                 })
-             ]);
+             // We can only filter by indexed args that actually exist in the ABI.
+             // JobCreated signature: event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)
+             const clientLogs = await publicClient.getLogs({
+                 address: store.escrowAddress as `0x${string}`,
+                 event: {
+                     type: 'event',
+                     name: 'JobCreated',
+                     inputs: [
+                         { type: 'uint256', name: 'jobId', indexed: true },
+                         { type: 'address', name: 'client', indexed: true },
+                         { type: 'address', name: 'provider', indexed: true },
+                         { type: 'address', name: 'evaluator', indexed: false },
+                         { type: 'uint256', name: 'expiredAt', indexed: false },
+                         { type: 'address', name: 'hook', indexed: false },
+                     ],
+                 },
+                 args: { client: walletAddress as `0x${string}` },
+                 fromBlock: 'earliest'
+             }).catch(() => []); // Swallow error for 'earliest' on some RPGs
 
+             const providerLogs = await publicClient.getLogs({
+                 address: store.escrowAddress as `0x${string}`,
+                 event: {
+                     type: 'event',
+                     name: 'JobCreated',
+                     inputs: [
+                         { type: 'uint256', name: 'jobId', indexed: true },
+                         { type: 'address', name: 'client', indexed: true },
+                         { type: 'address', name: 'provider', indexed: true },
+                         { type: 'address', name: 'evaluator', indexed: false },
+                         { type: 'uint256', name: 'expiredAt', indexed: false },
+                         { type: 'address', name: 'hook', indexed: false },
+                     ],
+                 },
+                 args: { provider: walletAddress as `0x${string}` },
+                 fromBlock: 'earliest'
+             }).catch(() => []); // Swallow error
+             
              const allJobIds = Array.from(new Set([
-                 ...clientLogs.map(l => (l.args as any).jobId?.toString()).filter(Boolean),
-                 ...providerLogs.map(l => (l.args as any).jobId?.toString()).filter(Boolean)
+                 ...clientLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
+                 ...providerLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
+                 ...(myJobs[walletAddress.toLowerCase()] || []) // Keep existing manually added ones
              ]));
 
              if (allJobIds.length > 0) {
@@ -139,6 +143,26 @@ export default function App() {
           <aside className="w-72 border-r border-subtle p-6 overflow-y-auto shrink-0 hidden md:block">
             <div className="space-y-8">
               <section>
+                <h3 className="mb-4 text-[10px] uppercase tracking-widest text-stone-500">Navigation</h3>
+                <div className="space-y-2">
+                  <button 
+                    onClick={() => setCurrentView('escrow')}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded ${currentView === 'escrow' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400 hover:bg-stone-900/50 hover:text-stone-200'}`}
+                  >
+                    <Briefcase className="w-4 h-4" />
+                    Escrow Jobs
+                  </button>
+                  <button 
+                    onClick={() => setCurrentView('agents')}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded ${currentView === 'agents' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400 hover:bg-stone-900/50 hover:text-stone-200'}`}
+                  >
+                    <Bot className="w-4 h-4" />
+                    ERC-8004 Agents
+                  </button>
+                </div>
+              </section>
+
+              <section>
                 <h3 className="mb-4 text-[10px] uppercase tracking-widest text-stone-500">Assets & Liquidity</h3>
                 <BalanceWidget />
               </section>
@@ -193,7 +217,7 @@ export default function App() {
                  <WalletButton />
               </div>
             ) : (
-              <ERC8183Card />
+              currentView === 'agents' ? <AgentsPage /> : <ERC8183Card />
             )}
           </section>
 

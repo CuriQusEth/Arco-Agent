@@ -44,6 +44,10 @@ export const addresses = {
   // The official Arc standard Testnet reference ERC-8183 contract
   // @ts-ignore
   defaultEscrow: (import.meta.env.VITE_ESCROW_ADDRESS as `0x${string}`) || '0x0747EEf0706327138c69792bF28Cd525089e4583',
+
+  identityRegistry: '0x8004A818BFB912233c491871b3d84c89A494BD9e' as const,
+  reputationRegistry: '0x8004B663056A597Dffe9eCcC1965A193B7388713' as const,
+  validationRegistry: '0x8004Cb1BF31DAf7788923b405b754f57acEB4272' as const,
 };
 
 export const erc20Abi = parseAbi([
@@ -62,6 +66,26 @@ export const escrowAbi = parseAbi([
   'function fund(uint256 jobId, bytes optParams)',
   'function submit(uint256 jobId, bytes32 deliverable, bytes optParams)',
   'function complete(uint256 jobId, bytes32 reason, bytes optParams)',
-  'function getJob(uint256 jobId) view returns (uint256 id, address client, address provider, address evaluator, string description, uint256 budget, uint256 expiredAt, uint8 status, address hook)',
+  'function getJob(uint256 jobId) view returns ((uint256 id, address client, address provider, address evaluator, string description, uint256 budget, uint256 expiredAt, uint8 status, address hook))',
   'event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)'
+]);
+
+// ERC-8004 Identity Registry ABI
+export const identityAbi = parseAbi([
+  'function register(string metadataURI)',
+  'function ownerOf(uint256 tokenId) view returns (address)',
+  'function tokenURI(uint256 tokenId) view returns (string)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
+]);
+
+// ERC-8004 Reputation Registry ABI
+export const reputationAbi = parseAbi([
+  'function giveFeedback(uint256 agentId, int128 score, uint8 feedbackType, string tag, string metadataURI, string evidenceURI, string comment, bytes32 feedbackHash)'
+]);
+
+// ERC-8004 Validation Registry ABI
+export const validationAbi = parseAbi([
+  'function validationRequest(address validator, uint256 agentId, string requestURI, bytes32 requestHash)',
+  'function validationResponse(bytes32 requestHash, uint8 response, string responseURI, bytes32 responseHash, string tag)',
+  'function getValidationStatus(bytes32 requestHash) view returns (address validatorAddress, uint256 agentId, uint8 response, bytes32 responseHash, string tag, uint256 lastUpdate)'
 ]);

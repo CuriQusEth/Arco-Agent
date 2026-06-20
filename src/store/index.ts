@@ -21,8 +21,10 @@ interface EscrowState {
   
   // Job Data
   client: string;
-  provider: string;
-  evaluator: string;
+  provider: string; // The owner wallet address
+  providerAgentId?: string; // The Agent ID
+  evaluator: string; // The owner wallet address
+  evaluatorAgentId?: string; // The Agent ID
   jobDetailsHash: string;
   budgetAmount: string;
   deliverable: string;
@@ -123,7 +125,9 @@ export const useEscrowStore = create<EscrowState>()(
         escrowAddress: state.escrowAddress,
         client: state.client,
         provider: state.provider,
+        providerAgentId: state.providerAgentId,
         evaluator: state.evaluator,
+        evaluatorAgentId: state.evaluatorAgentId,
         budgetAmount: state.budgetAmount,
         deliverable: state.deliverable,
         completionReason: state.completionReason

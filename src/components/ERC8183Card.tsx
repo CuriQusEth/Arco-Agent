@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useEscrowStore, useAppStore } from '../store';
-import { addresses, escrowAbi, arcTestnet, erc20Abi } from '../lib/contracts';
+import { addresses, escrowAbi, identityAbi, arcTestnet, erc20Abi } from '../lib/contracts';
 import { getAddress, isAddress, isHex, parseUnits, formatUnits, decodeEventLog } from 'viem';
 import { CheckCircle2, Circle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export function ERC8183Card() {
   const { walletAddress, nativeBalance, usdcBalance, getPublicClient, getWalletClient, switchToArcTestnet } = useWallet();
-  const { addTransaction, updateTransaction } = useAppStore();
+  const { addTransaction, updateTransaction, addMyJob } = useAppStore();
   const store = useEscrowStore();
   
   const [loadingStep, setLoadingStep] = useState<number | null>(null);
@@ -15,10 +15,10 @@ export function ERC8183Card() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [formInputs, setFormInputs] = useState({
-    provider: store.provider,
-    evaluator: store.evaluator,
-    jobDetailsHash: store.jobDetailsHash,
-    budgetAmount: store.budgetAmount,
+    provider: store.providerAgentId || '',
+    evaluator: store.evaluatorAgentId || '',
+    jobDetailsHash: store.jobDetailsHash || '',
+    budgetAmount: store.budgetAmount || '',
     hookAddress: '',
   });
 
@@ -44,13 +44,14 @@ export function ERC8183Card() {
   }, [jobState?.expiredAt]);
 
   useEffect(() => {
-    setFormInputs({
-       provider: store.provider,
-       evaluator: store.evaluator,
-       jobDetailsHash: store.jobDetailsHash,
-       budgetAmount: store.budgetAmount,
-    });
-  }, [store.provider, store.evaluator, store.jobDetailsHash, store.budgetAmount]);
+    setFormInputs(prev => ({
+       ...prev,
+       provider: store.providerAgentId || '',
+       evaluator: store.evaluatorAgentId || '',
+       jobDetailsHash: store.jobDetailsHash || '',
+       budgetAmount: store.budgetAmount || ''
+    }));
+  }, [store.providerAgentId, store.evaluatorAgentId, store.jobDetailsHash, store.budgetAmount]);
 
   // Fetch job status if we have a job ID
   useEffect(() => {
@@ -74,7 +75,7 @@ export function ERC8183Card() {
         return;
       }
 
-      const data = await (publicClient as any).readContract({
+      const data: any = await (publicClient as any).readContract({
         address: store.escrowAddress as `0x${string}`,
         abi: escrowAbi,
         functionName: 'getJob',
@@ -82,16 +83,17 @@ export function ERC8183Card() {
       });
 
       if (data) {
-        setJobState({
-          token: '0x3600000000000000000000000000000000000000', 
-          budget: data[5],
-          status: data[7],
-          expiredAt: data[6]
-        });
+        setJobState(prev => ({
+          ...prev, 
+          token: '0x3600000000000000000000000000000000000000', // USDC
+          budget: data.budget,
+          status: data.status,
+          expiredAt: data.expiredAt
+        }));
         
         // Sync local step with on-chain truth
-        const status = data[7];
-        const budget = data[5];
+        const status = data.status;
+        const budget = data.budget;
         
         if (status === 0 /* Open */) {
             if (budget === 0n) {
@@ -191,104 +193,129 @@ export function ERC8183Card() {
   };
 
   const handleCreateJob = async () => {
-    const prov = sanitizeInput(formInputs.provider);
-    const evalAddr = sanitizeInput(formInputs.evaluator);
+    const provAgentId = sanitizeInput(formInputs.provider);
+    const evalAgentId = sanitizeInput(formInputs.evaluator);
     const hash = sanitizeInput(formInputs.jobDetailsHash);
     const hookStr = sanitizeInput(formInputs.hookAddress);
 
     const errors: Record<string, string> = {};
-    if (!isAddress(prov, { strict: false })) errors.provider = 'Invalid provider address';
-    if (!isAddress(evalAddr, { strict: false })) errors.evaluator = 'Invalid evaluator address';
+    if (!provAgentId || !/^\d+$/.test(provAgentId)) errors.provider = 'Invalid Provider Agent ID';
+    if (!evalAgentId || !/^\d+$/.test(evalAgentId)) errors.evaluator = 'Invalid Evaluator Agent ID';
     if (!hash) errors.jobDetailsHash = 'Job description/ID is required';
     if (hookStr && !isAddress(hookStr, { strict: false })) errors.hookAddress = 'Invalid hook address';
     
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
-    // Check if hook is a contract
-    if (hookStr && hookStr !== '0x0000000000000000000000000000000000000000') {
+    setLoadingStep(0);
+    setErrorMsg(null);
+
+    try {
       const publicClient = getPublicClient();
-      if (publicClient) {
-        const code = await publicClient.getBytecode({ address: hookStr as `0x${string}` });
-        if (!code || code === '0x') {
-           setErrorMsg('Hook address must be a deployed contract, not an EOA.');
-           return;
-        }
+      if (!publicClient) throw new Error("Client not initialized");
+
+      // Verify Provider Agent
+      let provOwner: string;
+      try {
+        provOwner = await (publicClient as any).readContract({
+          address: addresses.identityRegistry,
+          abi: identityAbi,
+          functionName: 'ownerOf',
+          args: [BigInt(provAgentId)]
+        }) as string;
+      } catch (e) {
+        throw new Error(`Provider Agent ${provAgentId} does not exist or has no owner.`);
       }
-    }
 
-    let bytes32Hash = hash;
-    if (!bytes32Hash.startsWith('0x') || bytes32Hash.length !== 66) {
-        if (!bytes32Hash.startsWith('0x')) {
-            bytes32Hash = "0x" + Array.from(new TextEncoder().encode(bytes32Hash))
-              .map(b => b.toString(16).padStart(2, '0')).join('').padEnd(64, '0').slice(0, 64);
-        } else {
-            bytes32Hash = bytes32Hash.padEnd(66, '0').slice(0, 66);
-        }
-    }
+      // Verify Evaluator Agent
+      let evalOwner: string;
+      try {
+        evalOwner = await (publicClient as any).readContract({
+          address: addresses.identityRegistry,
+          abi: identityAbi,
+          functionName: 'ownerOf',
+          args: [BigInt(evalAgentId)]
+        }) as string;
+      } catch (e) {
+         throw new Error(`Evaluator Agent ${evalAgentId} does not exist or has no owner.`);
+      }
 
-    executeTx(0, 'Create Job', async () => ({
-      address: getAddress(sanitizeInput(store.escrowAddress)),
-      abi: escrowAbi,
-      functionName: 'createJob',
-      args: [
-        getAddress(prov), 
-        getAddress(evalAddr), 
-        BigInt(Math.floor(Date.now()/1000) + (3600 * 24 * 30)), // expire in 30 days
-        hash, 
-        hookStr ? getAddress(hookStr) : "0x0000000000000000000000000000000000000000"
-      ]
-    }), async (receipt) => {
-      // Parse event to get ID
-      let foundJobId = false;
-      let rawFallbackJobId: string | null = null;
+      // Check if hook is a contract
+      if (hookStr && hookStr !== '0x0000000000000000000000000000000000000000') {
+         const code = await publicClient.getBytecode({ address: hookStr as `0x${string}` });
+         if (!code || code === '0x') {
+             throw new Error('Hook address must be a deployed contract, not an EOA.');
+         }
+      }
 
-      for (const log of receipt.logs) {
-        if (log.topics && log.topics.length > 1) {
-           // capture first indexed param just in case ABI decoding fails
-           rawFallbackJobId = BigInt(log.topics[1] as string).toString();
-        }
-        try {
-           const decoded: any = decodeEventLog({
-             abi: escrowAbi,
-             data: log.data,
-             topics: log.topics,
-           });
-           if (decoded.eventName === 'JobCreated') {
-             const rawJobId = (decoded.args as any).jobId;
-             const jobIdStr = typeof rawJobId === 'bigint' ? rawJobId.toString() : String(rawJobId);
-             store.setJobId(jobIdStr);
-             store.setJobData({
-               client: walletAddress || prov,
-               provider: prov,
-               evaluator: evalAddr,
-               jobDetailsHash: hash
+      executeTx(0, 'Create Job', async () => ({
+        address: getAddress(sanitizeInput(store.escrowAddress)),
+        abi: escrowAbi,
+        functionName: 'createJob',
+        args: [
+          getAddress(provOwner), 
+          getAddress(evalOwner), 
+          BigInt(Math.floor(Date.now()/1000) + (3600 * 24 * 30)), // expire in 30 days
+          hash, 
+          hookStr ? getAddress(hookStr) : "0x0000000000000000000000000000000000000000"
+        ]
+      }), async (receipt) => {
+        let foundJobId = false;
+        let rawFallbackJobId: string | null = null;
+  
+        for (const log of receipt.logs) {
+          if (log.topics && log.topics.length > 1) {
+             rawFallbackJobId = BigInt(log.topics[1] as string).toString();
+          }
+          try {
+             const decoded: any = decodeEventLog({
+               abi: escrowAbi,
+               data: log.data,
+               topics: log.topics,
              });
-             store.setStep(1);
-             foundJobId = true;
-             break;
-           }
-        } catch (e) {
-           console.error("ABI Decoding failed for a log", e);
+             if (decoded.eventName === 'JobCreated') {
+               const rawJobId = (decoded.args as any).jobId;
+               const jobIdStr = typeof rawJobId === 'bigint' ? rawJobId.toString() : String(rawJobId);
+               store.setJobId(jobIdStr);
+               if (walletAddress) addMyJob(walletAddress, jobIdStr);
+               store.setJobData({
+                 client: walletAddress || provOwner,
+                 provider: provOwner,
+                 providerAgentId: provAgentId,
+                 evaluator: evalOwner,
+                 evaluatorAgentId: evalAgentId,
+                 jobDetailsHash: hash
+               });
+               store.setStep(1);
+               foundJobId = true;
+               break;
+             }
+          } catch (e) {
+          }
         }
-      }
+  
+        if (!foundJobId && rawFallbackJobId) {
+            store.setJobId(rawFallbackJobId);
+            if (walletAddress) addMyJob(walletAddress, rawFallbackJobId);
+            store.setJobData({
+              client: walletAddress || provOwner,
+              provider: provOwner,
+              providerAgentId: provAgentId,
+              evaluator: evalOwner,
+              evaluatorAgentId: evalAgentId,
+              jobDetailsHash: hash
+            });
+            store.setStep(1);
+            foundJobId = true;
+        }
+  
+        if (!foundJobId) throw new Error("Could not extract Job ID from transaction logs. Is ABI correct?");
+      });
 
-      if (!foundJobId && rawFallbackJobId) {
-          // If strictly valid decoding failed (perhaps string vs bytes32 ABI mismatch),
-          // fallback to the first indexed param of the logs.
-          store.setJobId(rawFallbackJobId);
-          store.setJobData({
-            client: walletAddress || prov,
-            provider: prov,
-            evaluator: evalAddr,
-            jobDetailsHash: hash
-          });
-          store.setStep(1);
-          foundJobId = true;
-      }
-
-      if (!foundJobId) throw new Error("Could not extract Job ID from transaction logs. Is ABI correct?");
-    });
+    } catch (e: any) {
+        setErrorMsg(e.message);
+        setLoadingStep(null);
+    }
   };
 
   const getValidatedJobId = () => {
@@ -564,42 +591,31 @@ export function ERC8183Card() {
           <div className={stepCardClass(0)}>
             <div className="flex items-center justify-between mb-4">
               <h4 className={`text-lg font-medium ${store.step === 0 ? 'text-amber-500' : 'text-stone-300'}`}>Create Job</h4>
-              {store.step === 0 && walletAddress && (
-                <button 
-                  onClick={() => {
-                    setFormInputs(p => ({...p, provider: walletAddress, evaluator: walletAddress}));
-                    setFieldErrors(e => ({...e, provider: '', evaluator: ''}));
-                  }}
-                  className="text-[10px] uppercase tracking-wider text-amber-500 hover:text-amber-400 font-bold bg-amber-500/10 hover:bg-amber-500/20 px-2 py-1 rounded transition-colors"
-                >
-                  Use My Wallet For Both
-                </button>
-              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-[10px] uppercase tracking-wider text-stone-500">Provider Address</label>
+                    <label className="text-[10px] uppercase tracking-wider text-stone-500">Provider Agent ID</label>
                   </div>
                   <input 
                     type="text" 
                     value={formInputs.provider}
                     onChange={e => {setFormInputs(p => ({...p, provider: e.target.value})); setFieldErrors(e => ({...e, provider: ''}))}}
                     className={fieldErrors.provider ? inputErrClass : inputClass}
-                    placeholder="0x..." 
+                    placeholder="e.g. 1" 
                     autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
                     disabled={store.step > 0}
                   />
                   {fieldErrors.provider && <p className="text-[10px] text-red-500 mt-1">{fieldErrors.provider}</p>}
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-wider text-stone-500">Evaluator Address</label>
+                  <label className="text-[10px] uppercase tracking-wider text-stone-500">Evaluator Agent ID</label>
                   <input 
                     type="text" 
                     value={formInputs.evaluator}
                     onChange={e => {setFormInputs(p => ({...p, evaluator: e.target.value})); setFieldErrors(e => ({...e, evaluator: ''}))}}
                     className={fieldErrors.evaluator ? inputErrClass : inputClass}
-                    placeholder="0x..." 
+                    placeholder="e.g. 2" 
                     autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
                     disabled={store.step > 0}
                   />
