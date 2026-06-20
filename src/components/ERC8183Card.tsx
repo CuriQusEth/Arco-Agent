@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useEscrowStore, useAppStore } from '../store';
 import { addresses, escrowAbi, identityAbi, arcTestnet, erc20Abi } from '../lib/contracts';
-import { getAddress, isAddress, isHex, parseUnits, formatUnits, decodeEventLog } from 'viem';
+import { getAddress, isAddress, parseUnits, formatUnits, decodeEventLog } from 'viem';
 import { CheckCircle2, Circle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export function ERC8183Card() {
@@ -83,6 +83,13 @@ export function ERC8183Card() {
       });
 
       if (data) {
+        store.setJobData({
+           client: data.client,
+           provider: data.provider,
+           evaluator: data.evaluator,
+           jobDetailsHash: data.description
+        });
+        
         setJobState(prev => ({
           ...prev, 
           token: '0x3600000000000000000000000000000000000000', // USDC
@@ -794,10 +801,30 @@ export function ERC8183Card() {
         </div>
 
         {store.step === 5 && (
-            <div className="mt-8 rounded-xl border border-green-500/30 bg-green-500/10 p-8 text-center animate-in fade-in slide-in-from-bottom-4">
-                <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-serif-display text-green-400">Escrow Complete</h3>
-                <p className="text-sm text-green-500/70 mt-2 max-w-md mx-auto">The agentic escrow has resolved successfully, updating verifiable metadata to Arc Testnet.</p>
+            <div className={`mt-8 rounded-xl border p-8 text-center animate-in fade-in slide-in-from-bottom-4 ${
+                     jobState?.status === 4 ? 'border-amber-500/30 bg-amber-500/10' : 
+                     jobState?.status === 5 ? 'border-stone-500/30 bg-stone-500/10' : 
+                     'border-green-500/30 bg-green-500/10'
+                }`}>
+                {jobState?.status === 4 ? (
+                   <>
+                     <AlertCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+                     <h3 className="text-xl font-serif-display text-amber-400">Job Rejected</h3>
+                     <p className="text-sm text-amber-500/80 mt-2 max-w-md mx-auto">This job was rejected by the evaluator.</p>
+                   </>
+                ) : jobState?.status === 5 ? (
+                   <>
+                     <AlertCircle className="w-16 h-16 text-stone-500 mx-auto mb-4" />
+                     <h3 className="text-xl font-serif-display text-stone-400">Job Expired</h3>
+                     <p className="text-sm text-stone-500/80 mt-2 max-w-md mx-auto">This job expired before it was funded or resolved.</p>
+                   </>
+                ) : (
+                   <>
+                     <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                     <h3 className="text-xl font-serif-display text-green-400">Escrow Complete</h3>
+                     <p className="text-sm text-green-500/70 mt-2 max-w-md mx-auto">The agentic escrow has resolved successfully.</p>
+                   </>
+                )}
                 <button onClick={store.resetJob} className="mt-6 px-6 py-2.5 bg-stone-900 border border-stone-700 rounded-full text-sm font-bold text-stone-300 hover:text-white hover:bg-stone-800 transition-colors uppercase tracking-wider">Start New Job</button>
             </div>
         )}

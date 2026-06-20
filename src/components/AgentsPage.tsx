@@ -5,6 +5,7 @@ import { useAgentReputation } from '../hooks/useAgentReputation';
 import { useAgentValidation } from '../hooks/useAgentValidation';
 import { Shield, CheckCircle, XCircle, Search, Bot } from 'lucide-react';
 import { useAgentStore } from '../store/agentStore';
+import { isAddress } from 'viem';
 
 export function AgentsPage() {
   const [activeTab, setActiveTab] = useState<'register' | 'profile' | 'reputation' | 'validation'>('register');
@@ -93,10 +94,6 @@ function AgentProfile() {
     if (!agentId) return;
     const data = await getAgentInfo(agentId);
     setInfo(data);
-    if (data) {
-       // Just saving to store for demo/compliance
-       useAgentStore.getState().setAgentInfo(agentId, data.uri, 100, 1);
-    }
   };
 
   return (
@@ -125,7 +122,7 @@ function AgentProfile() {
               <div className="font-mono text-sm text-stone-300 break-all">{info.uri}</div>
            </div>
            <div className="flex items-center gap-2 mt-4 text-xs font-bold uppercase tracking-widest text-amber-500">
-             <Shield className="w-4 h-4" /> Identity Verified
+             <Shield className="w-4 h-4" /> Identity Registered
            </div>
          </div>
        )}
@@ -134,6 +131,8 @@ function AgentProfile() {
 }
 
 function Reputation() {
+  const { walletAddress } = useWallet();
+  const { getAgentInfo } = useAgentIdentity();
   const { giveFeedback, isLoading } = useAgentReputation();
   const [agentId, setAgentId] = useState('');
   const [score, setScore] = useState(95);
@@ -142,6 +141,11 @@ function Reputation() {
 
   const submit = async () => {
      try {
+        setMsg('Checking role...');
+        const info = await getAgentInfo(agentId);
+        if (info && info.owner.toLowerCase() === walletAddress?.toLowerCase()) {
+           throw new Error("Agents cannot give feedback on themselves. Please switch wallet.");
+        }
         setMsg('Submitting...');
         await giveFeedback(agentId, score, tag);
         setMsg('Success!');
@@ -165,16 +169,25 @@ function Reputation() {
 }
 
 function Validation() {
+  const { walletAddress } = useWallet();
+  const { getAgentInfo } = useAgentIdentity();
   const { requestValidation, submitValidationResponse, getValidationStatus, isLoading } = useAgentValidation();
   const [mode, setMode] = useState<'request' | 'response' | 'check'>('request');
   const [agentId, setAgentId] = useState('');
   const [validator, setValidator] = useState('');
   const [reqHash, setReqHash] = useState('');
+  const [responseScore, setResponseScore] = useState(100);
   const [msg, setMsg] = useState('');
 
   const handleReq = async () => {
      try {
        setMsg('Requesting...');
+       if (!isAddress(validator)) throw new Error('Invalid validator address');
+       const info = await getAgentInfo(agentId);
+       if (!info) throw new Error("Agent not found.");
+       if (info.owner.toLowerCase() !== walletAddress?.toLowerCase()) {
+           throw new Error("Only the agent owner can request validation. Please switch wallet.");
+       }
        const hash = await requestValidation(validator, agentId, 'ipfs://request_uri', `kyc_request_${agentId}_${Date.now()}`);
        setReqHash(hash);
        setMsg(`Success. Request Hash: ${hash}`);
@@ -183,8 +196,14 @@ function Validation() {
 
   const handleRes = async () => {
      try {
+       setMsg('Checking role...');
+       const status = await getValidationStatus(reqHash);
+       if (!status) throw new Error("Validation request not found.");
+       if ((status[0] as string).toLowerCase() !== walletAddress?.toLowerCase()) {
+           throw new Error("Only the specified validator can respond. Please switch wallet.");
+       }
        setMsg('Responding...');
-       await submitValidationResponse(reqHash, 100, 'kyc_verified');
+       await submitValidationResponse(reqHash, responseScore, responseScore >= 50 ? 'kyc_verified' : 'kyc_failed');
        setMsg('Success!');
      } catch (e:any) { setMsg(e.message); }
   };
@@ -220,7 +239,18 @@ function Validation() {
           {mode === 'response' && (
              <div className="space-y-4">
                 <input type="text" placeholder="Request Hash" value={reqHash} onChange={e=>setReqHash(e.target.value)} className="w-full rounded border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-200" />
-                <button onClick={handleRes} disabled={isLoading} className="w-full bg-stone-800 hover:bg-stone-700 py-3 rounded text-stone-200 text-sm font-bold uppercase tracking-wide disabled:opacity-50">Provide Response (Score 100)</button>
+                <div className="flex items-center gap-4 py-2">
+                   <label className="text-[10px] uppercase tracking-wider text-stone-500">Validation Result:</label>
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={responseScore === 100} onChange={() => setResponseScore(100)} className="accent-amber-500" />
+                      <span className="text-sm text-stone-300">Pass (100)</span>
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={responseScore === 0} onChange={() => setResponseScore(0)} className="accent-red-500" />
+                      <span className="text-sm text-stone-300">Fail (0)</span>
+                   </label>
+                </div>
+                <button onClick={handleRes} disabled={isLoading} className="w-full bg-stone-800 hover:bg-stone-700 py-3 rounded text-stone-200 text-sm font-bold uppercase tracking-wide disabled:opacity-50">Provide Response</button>
              </div>
           )}
           {mode === 'check' && (

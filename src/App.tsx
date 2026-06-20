@@ -15,7 +15,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [currentView, setCurrentView] = useState<'escrow' | 'agents'>('escrow');
   const { walletAddress, getPublicClient } = useWallet();
-  const { transactions, myJobs, setMyJobs } = useAppStore();
+  const { transactions, myJobs, setMyJobs, addMyJob } = useAppStore();
   const store = useEscrowStore();
   const [isFetchingJobs, setIsFetchingJobs] = useState(false);
 
@@ -40,45 +40,67 @@ export default function App() {
          try {
              // We can only filter by indexed args that actually exist in the ABI.
              // JobCreated signature: event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)
-             const clientLogs = await publicClient.getLogs({
-                 address: store.escrowAddress as `0x${string}`,
-                 event: {
-                     type: 'event',
-                     name: 'JobCreated',
-                     inputs: [
-                         { type: 'uint256', name: 'jobId', indexed: true },
-                         { type: 'address', name: 'client', indexed: true },
-                         { type: 'address', name: 'provider', indexed: true },
-                         { type: 'address', name: 'evaluator', indexed: false },
-                         { type: 'uint256', name: 'expiredAt', indexed: false },
-                         { type: 'address', name: 'hook', indexed: false },
-                     ],
-                 },
-                 args: { client: walletAddress as `0x${string}` },
-                 fromBlock: 'earliest'
-             }).catch(() => []); // Swallow error for 'earliest' on some RPGs
-
-             const providerLogs = await publicClient.getLogs({
-                 address: store.escrowAddress as `0x${string}`,
-                 event: {
-                     type: 'event',
-                     name: 'JobCreated',
-                     inputs: [
-                         { type: 'uint256', name: 'jobId', indexed: true },
-                         { type: 'address', name: 'client', indexed: true },
-                         { type: 'address', name: 'provider', indexed: true },
-                         { type: 'address', name: 'evaluator', indexed: false },
-                         { type: 'uint256', name: 'expiredAt', indexed: false },
-                         { type: 'address', name: 'hook', indexed: false },
-                     ],
-                 },
-                 args: { provider: walletAddress as `0x${string}` },
-                 fromBlock: 'earliest'
-             }).catch(() => []); // Swallow error
+             const latestBlock = await (publicClient as any).getBlockNumber();
+             
+             const allClientLogs: any[] = [];
+             const allProviderLogs: any[] = [];
+             
+             let currentTo = latestBlock;
+             const MAX_CHUNKS = 5; // Look back up to 50k blocks
+             
+             for (let i = 0; i < MAX_CHUNKS; i++) {
+                 if (currentTo < 0n) break;
+                 const currentFrom = currentTo > 10000n ? currentTo - 10000n : 0n;
+                 
+                 const [cLogs, pLogs] = await Promise.all([
+                     (publicClient as any).getLogs({
+                         address: store.escrowAddress as `0x${string}`,
+                         event: {
+                             type: 'event',
+                             name: 'JobCreated',
+                             inputs: [
+                                 { type: 'uint256', name: 'jobId', indexed: true },
+                                 { type: 'address', name: 'client', indexed: true },
+                                 { type: 'address', name: 'provider', indexed: true },
+                                 { type: 'address', name: 'evaluator', indexed: false },
+                                 { type: 'uint256', name: 'expiredAt', indexed: false },
+                                 { type: 'address', name: 'hook', indexed: false },
+                             ],
+                         },
+                         args: { client: walletAddress as `0x${string}` },
+                         fromBlock: currentFrom,
+                         toBlock: currentTo
+                     }).catch(() => []),
+                     (publicClient as any).getLogs({
+                         address: store.escrowAddress as `0x${string}`,
+                         event: {
+                             type: 'event',
+                             name: 'JobCreated',
+                             inputs: [
+                                 { type: 'uint256', name: 'jobId', indexed: true },
+                                 { type: 'address', name: 'client', indexed: true },
+                                 { type: 'address', name: 'provider', indexed: true },
+                                 { type: 'address', name: 'evaluator', indexed: false },
+                                 { type: 'uint256', name: 'expiredAt', indexed: false },
+                                 { type: 'address', name: 'hook', indexed: false },
+                             ],
+                         },
+                         args: { provider: walletAddress as `0x${string}` },
+                         fromBlock: currentFrom,
+                         toBlock: currentTo
+                     }).catch(() => [])
+                 ]);
+                 
+                 allClientLogs.push(...cLogs);
+                 allProviderLogs.push(...pLogs);
+                 
+                 if (currentFrom === 0n) break;
+                 currentTo = currentFrom - 1n;
+             }
              
              const allJobIds = Array.from(new Set([
-                 ...clientLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
-                 ...providerLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
+                 ...allClientLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
+                 ...allProviderLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
                  ...(myJobs[walletAddress.toLowerCase()] || []) // Keep existing manually added ones
              ]));
 
@@ -191,7 +213,10 @@ export default function App() {
                   <form onSubmit={(e) => {
                       e.preventDefault();
                       const val = new FormData(e.currentTarget).get('jobid') as string;
-                      if (/^\d+$/.test(val)) store.setJobId(val);
+                      if (/^\d+$/.test(val)) {
+                          store.setJobId(val);
+                          if (walletAddress) addMyJob(walletAddress, val);
+                      }
                       e.currentTarget.reset();
                   }} className="mt-4 pt-4 border-t border-stone-800 flex items-center gap-2">
                        <input type="text" name="jobid" placeholder="Load by ID..." className="flex-1 rounded border border-subtle bg-stone-950 px-2.5 py-1.5 text-xs text-stone-200 outline-none focus:border-amber-600" />
