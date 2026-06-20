@@ -8,7 +8,7 @@ import { AgentsPage } from './components/AgentsPage';
 import { useWallet } from './hooks/useWallet';
 import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot } from 'lucide-react';
 import { useEscrowStore, useAppStore } from './store';
-import { addresses, arcTestnet } from './lib/contracts';
+import { addresses, arcTestnet, escrowAbi } from './lib/contracts';
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
@@ -18,6 +18,7 @@ export default function App() {
   const { transactions, myJobs, setMyJobs, addMyJob } = useAppStore();
   const store = useEscrowStore();
   const [isFetchingJobs, setIsFetchingJobs] = useState(false);
+  const [jobStatuses, setJobStatuses] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (
@@ -120,6 +121,64 @@ export default function App() {
   const myTxs = transactions.filter(t => t.from.toLowerCase() === walletAddress?.toLowerCase()).slice(0, 5);
   const activeJobs = walletAddress ? (myJobs[walletAddress.toLowerCase()] || []) : [];
 
+  useEffect(() => {
+    if (!walletAddress || activeJobs.length === 0) return;
+    const publicClient = getPublicClient();
+    if (!publicClient) return;
+
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout;
+
+    const fetchStatuses = async () => {
+      if (!mounted) return;
+      const statuses: Record<string, number> = {};
+      try {
+        const batch = activeJobs.map(async (id: string) => {
+           try {
+               const job = await (publicClient as any).readContract({
+                 address: store.escrowAddress as `0x${string}`,
+                 abi: escrowAbi,
+                 functionName: 'getJob',
+                 args: [BigInt(id)]
+               });
+               return { id, status: job.status };
+           } catch { return { id, status: null }; }
+        });
+        const results = await Promise.all(batch);
+        if (mounted) {
+          for (const r of results) {
+              if (r.status !== null) statuses[r.id] = r.status;
+          }
+          setJobStatuses(prev => ({ ...prev, ...statuses }));
+        }
+      } catch (e) {
+        console.error("fetch status error", e);
+      } finally {
+        if (mounted) {
+            timeoutId = setTimeout(fetchStatuses, 15000); // Poll every 15 seconds
+        }
+      }
+    };
+    fetchStatuses();
+    return () => { 
+        mounted = false; 
+        if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [activeJobs.join(','), getPublicClient, store.escrowAddress, walletAddress]);
+
+  const getStatusTag = (status?: number) => {
+    if (status === undefined || status === null) return null;
+    switch (status) {
+        case 0: return <span className="px-1.5 py-0.5 rounded-sm bg-stone-800 text-[9px] text-stone-300 font-bold uppercase tracking-wider">Pending</span>;
+        case 1: return <span className="px-1.5 py-0.5 rounded-sm bg-amber-500/10 text-[9px] text-amber-500 border border-amber-500/20 font-bold uppercase tracking-wider">Active</span>;
+        case 2: return <span className="px-1.5 py-0.5 rounded-sm bg-blue-500/10 text-[9px] text-blue-400 border border-blue-500/20 font-bold uppercase tracking-wider">Review</span>;
+        case 3: return <span className="px-1.5 py-0.5 rounded-sm bg-green-500/10 text-[9px] text-green-500 border border-green-500/20 font-bold uppercase tracking-wider">Completed</span>;
+        case 4: return <span className="px-1.5 py-0.5 rounded-sm bg-red-500/10 text-[9px] text-red-500 border border-red-500/20 font-bold uppercase tracking-wider">Rejected</span>;
+        case 5: return <span className="px-1.5 py-0.5 rounded-sm bg-stone-800/80 text-[9px] text-stone-500 border border-stone-700 font-bold uppercase tracking-wider">Expired</span>;
+        default: return null;
+    }
+  };
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[#050505] font-sans text-stone-200">
        <header className="flex h-16 items-center justify-between border-b border-subtle px-8 shrink-0">
@@ -204,7 +263,10 @@ export default function App() {
                                onClick={() => store.setJobId(id.toString())}
                                className={`cursor-pointer p-3 rounded-lg border ${store.jobId === id ? 'border-amber-600/50 bg-stone-900/60' : 'border-stone-800 bg-stone-900/30 hover:border-stone-600'} transition-colors`}>
                              <div className="flex justify-between items-center mb-1">
-                               <div className="text-xs font-bold text-stone-200">JOB #{id}</div>
+                               <div className="flex items-center gap-2">
+                                 <div className="text-xs font-bold text-stone-200">JOB #{id}</div>
+                                 {getStatusTag(jobStatuses[id])}
+                               </div>
                              </div>
                              <div className="text-[10px] text-stone-500">Click to view details</div>
                           </div>
