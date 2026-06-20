@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { createWalletClient, createPublicClient, custom, http, isAddress } from 'viem';
+import { createWalletClient, createPublicClient, custom, http, webSocket, isAddress } from 'viem';
 import { arcTestnet, addresses, erc20Abi } from '../lib/contracts';
 import { useAppStore } from '../store';
+
+let watchClientInstance: any = null;
 
 export function useWallet() {
   const { walletAddress, setWallet } = useAppStore();
@@ -10,12 +12,44 @@ export function useWallet() {
   const [usdcBalance, setUsdcBalance] = useState<bigint | null>(null);
   const [usdcDecimals, setUsdcDecimals] = useState<number>(6);
   const [error, setError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<{info: any, provider: any}[]>([]);
+
+  useEffect(() => {
+    const onAnnounce = (e: any) => {
+      if (e.detail && e.detail.provider) {
+        setProviders(prev => {
+          if (prev.some(p => p.info.uuid === e.detail.info.uuid)) return prev;
+          return [...prev, e.detail];
+        });
+      }
+    };
+    window.addEventListener('eip6963:announceProvider', onAnnounce);
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    return () => window.removeEventListener('eip6963:announceProvider', onAnnounce);
+  }, []);
 
   const getPublicClient = () => {
     return createPublicClient({
       chain: arcTestnet,
       transport: window.ethereum ? custom(window.ethereum) : http(),
     });
+  };
+
+  const getWatchClient = () => {
+    if (!watchClientInstance) {
+      if (arcTestnet.rpcUrls.default.webSocket) {
+        watchClientInstance = createPublicClient({
+          chain: arcTestnet,
+          transport: webSocket(arcTestnet.rpcUrls.default.webSocket[0]),
+        });
+      } else {
+        watchClientInstance = createPublicClient({
+          chain: arcTestnet,
+          transport: http(arcTestnet.rpcUrls.default.http[0]),
+        });
+      }
+    }
+    return watchClientInstance;
   };
 
   const getWalletClient = () => {
@@ -57,29 +91,33 @@ export function useWallet() {
     }
   }, []);
 
-  const connect = async () => {
+  const connect = async (selectedProvider?: any) => {
     setError(null);
-    if (!window.ethereum) {
+    const providerToUse = selectedProvider || window.ethereum;
+    
+    if (!providerToUse) {
       setError('No matching wallet found. Please install MetaMask, Rabby, or Coinbase Wallet.');
       return;
     }
 
     try {
       setIsConnecting(true);
-      const walletClient = getWalletClient();
-      if (!walletClient) throw new Error('Could not create wallet client');
+      const walletClient = createWalletClient({
+        chain: arcTestnet,
+        transport: custom(providerToUse),
+      });
 
       const accounts = await walletClient.requestAddresses();
       if (!accounts[0]) throw new Error('No accounts returned');
 
       const address = accounts[0];
-      const chainIdHex = await window.ethereum.request({ method: 'eth_chainId' });
+      const chainIdHex = await providerToUse.request({ method: 'eth_chainId' });
       const chainId = parseInt(chainIdHex as string, 16);
 
       setWallet(address, chainId);
 
       if (chainId !== arcTestnet.id) {
-        await switchToArcTestnet();
+        await switchToArcTestnet(providerToUse);
       } else {
         await fetchBalances(address);
       }
@@ -89,17 +127,17 @@ export function useWallet() {
       } else {
         setError(err?.message || 'Failed to connect wallet');
       }
-      // Removed err directly to avoid BigInt serialization
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const switchToArcTestnet = async () => {
-    if (!window.ethereum) return;
+  const switchToArcTestnet = async (fallbackProvider?: any) => {
+    const providerToUse = fallbackProvider || window.ethereum;
+    if (!providerToUse) return;
     setError(null);
     try {
-      await window.ethereum.request({
+      await providerToUse.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: `0x${arcTestnet.id.toString(16)}` }],
       });
@@ -200,6 +238,8 @@ export function useWallet() {
     disconnect,
     switchToArcTestnet,
     getPublicClient,
+    getWatchClient,
     getWalletClient,
+    providers,
   };
 }

@@ -3,6 +3,7 @@ import { useWallet } from '../hooks/useWallet';
 import { useAgentIdentity } from '../hooks/useAgentIdentity';
 import { useAgentReputation } from '../hooks/useAgentReputation';
 import { useAgentValidation } from '../hooks/useAgentValidation';
+import { addresses, reputationAbi, validationAbi } from '../lib/contracts';
 import { Shield, CheckCircle, XCircle, Search, Bot } from 'lucide-react';
 import { useAgentStore } from '../store/agentStore';
 import { isAddress } from 'viem';
@@ -87,14 +88,77 @@ function RegisterAgent() {
 
 function AgentProfile() {
   const { getAgentInfo } = useAgentIdentity();
+  const { getPublicClient } = useWallet();
   const [agentId, setAgentId] = useState('');
   const [info, setInfo] = useState<any>(null);
+  const [metadata, setMetadata] = useState<any>(null);
+  const [feedback, setFeedback] = useState<any[]>([]);
+  const [validations, setValidations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const fetchProfile = async () => {
     if (!agentId) return;
-    const data = await getAgentInfo(agentId);
-    setInfo(data);
+    setLoading(true);
+    setInfo(null);
+    setMetadata(null);
+    setFeedback([]);
+    setValidations([]);
+
+    try {
+      const data = await getAgentInfo(agentId);
+      if (!data) throw new Error("Agent not found");
+      setInfo(data);
+
+      const publicClient = getPublicClient() as any;
+
+      // 1. Fetch metadata
+      let uri = data.uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      try {
+        const res = await fetch(uri);
+        const meta = await res.json();
+        setMetadata(meta);
+      } catch (e) {
+        console.error("Metadata fetch failed", e);
+      }
+
+      // 2. Fetch feedback
+      try {
+         const allFb = await publicClient.readContract({
+            address: addresses.reputationRegistry,
+            abi: reputationAbi,
+            functionName: 'readAllFeedback',
+            args: [BigInt(agentId), [], "", "", false]
+         });
+         setFeedback(allFb || []);
+      } catch(e) { console.error("feedback fetch err", e); }
+
+      // 3. Fetch validations
+      try {
+         const reqs = await publicClient.readContract({
+             address: addresses.validationRegistry,
+             abi: validationAbi,
+             functionName: 'getAgentValidations',
+             args: [BigInt(agentId)]
+         });
+         const validDetails = await Promise.all((reqs as string[]).map(async (hash) => {
+             const stat = await publicClient.readContract({
+                 address: addresses.validationRegistry,
+                 abi: validationAbi,
+                 functionName: 'getValidationStatus',
+                 args: [hash]
+             });
+             return { hash, address: stat[0], response: stat[2], tag: stat[4], lastUpdate: stat[5] };
+         }));
+         setValidations(validDetails);
+      } catch(e) {}
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const avgScore = feedback.length > 0 ? feedback.reduce((sum, f) => sum + Number(f.value), 0) / feedback.length : null;
 
   return (
     <div className="space-y-6">
@@ -106,24 +170,88 @@ function AgentProfile() {
              value={agentId}
              onChange={e => setAgentId(e.target.value)}
           />
-          <button onClick={fetchProfile} className="bg-stone-800 hover:bg-stone-700 px-4 rounded text-stone-200 flex items-center gap-2 text-sm">
-             <Search className="w-4 h-4" /> Lookup
+          <button onClick={fetchProfile} disabled={loading} className="bg-stone-800 hover:bg-stone-700 px-4 rounded text-stone-200 flex items-center gap-2 text-sm disabled:opacity-50">
+             <Search className="w-4 h-4" /> {loading ? 'Wait...' : 'Lookup'}
           </button>
        </div>
        
        {info && (
-         <div className="bg-stone-900/50 p-6 rounded-xl border border-stone-800 flex flex-col gap-4">
-           <div>
-              <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-1">Owner Address</div>
-              <div className="font-mono text-sm text-stone-300">{info.owner}</div>
+         <div className="flex flex-col gap-6">
+           <div className="bg-stone-900/50 p-6 rounded-xl border border-stone-800 flex gap-6">
+             {metadata?.image && (
+                <div className="w-24 h-24 rounded bg-stone-800 shrink-0 border border-stone-700 overflow-hidden">
+                   <img src={metadata.image.replace('ipfs://', 'https://w3s.link/ipfs/')} alt="avatar" className="w-full h-full object-cover" />
+                </div>
+             )}
+             <div className="flex-1">
+                <div className="flex justify-between items-start">
+                   <h2 className="text-xl font-bold font-serif-display text-amber-500 mb-1">{metadata?.name || `Agent #${agentId}`}</h2>
+                   {avgScore !== null && (
+                      <div className="bg-stone-800 border border-stone-700 rounded px-2.5 py-1 text-xs font-bold text-stone-300">
+                         Avg Score: <span className="text-amber-500">{avgScore.toFixed(0)}</span>
+                      </div>
+                   )}
+                </div>
+                {metadata?.description && <p className="text-sm text-stone-400 mb-3">{metadata.description}</p>}
+                
+                <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                   <div>
+                      <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-1">Owner Address</div>
+                      <div className="font-mono text-xs text-stone-300">{info.owner}</div>
+                   </div>
+                   <div>
+                      <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-1">Metadata URI</div>
+                      <div className="font-mono text-[10px] text-stone-500 break-all">{info.uri}</div>
+                   </div>
+                </div>
+
+                {metadata?.capabilities && Array.isArray(metadata.capabilities) && (
+                   <div className="mt-4 flex flex-wrap gap-2">
+                     {metadata.capabilities.map((c: string) => (
+                        <span key={c} className="px-2 py-0.5 rounded-full bg-stone-800 border border-stone-700 text-[10px] text-stone-400 uppercase tracking-widest">{c}</span>
+                     ))}
+                   </div>
+                )}
+             </div>
            </div>
-           <div>
-              <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-1">Metadata URI</div>
-              <div className="font-mono text-sm text-stone-300 break-all">{info.uri}</div>
-           </div>
-           <div className="flex items-center gap-2 mt-4 text-xs font-bold uppercase tracking-widest text-amber-500">
-             <Shield className="w-4 h-4" /> Identity Registered
-           </div>
+
+           {/* Validations */}
+           {validations.length > 0 && (
+             <div className="bg-stone-900/30 p-5 rounded-xl border border-stone-800">
+               <h3 className="text-xs uppercase tracking-widest text-stone-500 mb-4 font-bold">Verification Badges</h3>
+               <div className="flex flex-wrap gap-2">
+                 {validations.map(v => (
+                    <div key={v.hash} className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold ${v.response >= 50 ? 'border-green-500/30 bg-green-500/10 text-green-500' : 'border-red-500/30 bg-red-500/10 text-red-500'}`}>
+                       {v.response >= 50 ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                       {v.tag || (v.response >= 50 ? 'Verified' : 'Failed')}
+                    </div>
+                 ))}
+               </div>
+             </div>
+           )}
+
+           {/* Feedback History */}
+           {feedback.length > 0 && (
+             <div className="bg-stone-900/30 p-5 rounded-xl border border-stone-800">
+               <h3 className="text-xs uppercase tracking-widest text-stone-500 mb-4 font-bold">Community Feedback</h3>
+               <div className="space-y-3">
+                 {feedback.map((f, i) => (
+                    <div key={i} className="flex flex-col gap-1 p-3 rounded bg-stone-900/50 border border-stone-800">
+                       <div className="flex justify-between items-center">
+                          <div className="text-xs font-mono text-stone-400">By: {f.clientAddress}</div>
+                          <div className="text-xs font-bold text-amber-500">Score: {Number(f.value)}</div>
+                       </div>
+                       {(f.tag1 || f.tag2) && (
+                          <div className="text-[10px] text-stone-500 uppercase flex gap-2 mt-1">
+                             {f.tag1 && <span className="bg-stone-800 px-1.5 py-0.5 rounded border border-stone-700">{f.tag1}</span>}
+                             {f.tag2 && <span className="bg-stone-800 px-1.5 py-0.5 rounded border border-stone-700">{f.tag2}</span>}
+                          </div>
+                       )}
+                    </div>
+                 ))}
+               </div>
+             </div>
+           )}
          </div>
        )}
     </div>

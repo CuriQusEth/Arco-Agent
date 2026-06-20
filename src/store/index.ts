@@ -53,6 +53,8 @@ interface AppStore {
   setWallet: (address: string | null, chainId: number | null) => void;
   addMyJob: (wallet: string, jobId: string) => void;
   setMyJobs: (wallet: string, jobIds: string[]) => void;
+  notificationsEnabled: boolean;
+  setNotificationsEnabled: (enabled: boolean) => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -62,11 +64,13 @@ export const useAppStore = create<AppStore>()(
       chainId: null,
       transactions: [],
       myJobs: {},
+      notificationsEnabled: false,
       addTransaction: (tx) => set((state) => ({ transactions: [tx, ...state.transactions] })),
       updateTransaction: (hash, updates) => set((state) => ({
         transactions: state.transactions.map((t) => (t.hash === hash ? { ...t, ...updates } : t)),
       })),
       clearTransactions: () => set({ transactions: [] }),
+      setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setWallet: (address, chainId) => set({ walletAddress: address, chainId }),
       addMyJob: (wallet, jobId) => set((state) => {
          const w = wallet.toLowerCase();

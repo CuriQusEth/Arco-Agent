@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useEscrowStore } from '../store';
+import { useEscrowStore, useAppStore } from '../store';
 import { X, Check } from 'lucide-react';
 import { addresses } from '../lib/contracts';
 import { isAddress, getAddress } from 'viem';
@@ -11,11 +11,27 @@ interface Props {
 
 export function SettingsModal({ isOpen, onClose }: Props) {
   const store = useEscrowStore();
+  const { notificationsEnabled, setNotificationsEnabled } = useAppStore();
   const [addrInput, setAddrInput] = useState(store.escrowAddress || addresses.defaultEscrow || '');
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
 
   if (!isOpen) return null;
+
+  const handleToggleNotifications = async () => {
+    if (!notificationsEnabled) {
+      if ('Notification' in window) {
+         try {
+           const permission = await Notification.requestPermission();
+           if (permission === 'granted') {
+             setNotificationsEnabled(true);
+           }
+         } catch(e) { }
+      }
+    } else {
+      setNotificationsEnabled(false);
+    }
+  };
 
   const handleSave = () => {
     const clean = addrInput.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
@@ -40,7 +56,7 @@ export function SettingsModal({ isOpen, onClose }: Props) {
         </div>
         
         <div className="p-6">
-           <div className="space-y-4">
+           <div className="space-y-6">
                <div>
                   <label className="block text-sm font-medium text-stone-300 mb-1">Target Escrow Contract</label>
                   <div className="text-xs text-stone-500 mb-2">Must be a verified ERC-8183 style contract on Arc Testnet.</div>
@@ -56,7 +72,22 @@ export function SettingsModal({ isOpen, onClose }: Props) {
                   {err && <div className="text-red-500 text-xs mt-1">{err}</div>}
                </div>
 
-               <div className="pt-4 flex items-center justify-end gap-3">
+               <div>
+                 <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-stone-300">Browser Notifications</div>
+                      <div className="text-xs text-stone-500">Get alerted for job status changes.</div>
+                    </div>
+                    <button 
+                       onClick={handleToggleNotifications}
+                       className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 ${notificationsEnabled ? 'bg-amber-500' : 'bg-stone-700'}`}
+                    >
+                       <div className={`w-4 h-4 rounded-full bg-white transition-transform ${notificationsEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                 </div>
+               </div>
+
+               <div className="pt-4 flex items-center justify-end gap-3 border-t border-stone-800">
                   <button onClick={onClose} className="px-4 py-2 border border-stone-700 text-stone-400 rounded-md hover:bg-stone-800 font-medium text-sm transition-colors">Cancel</button>
                   <button onClick={handleSave} className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-black rounded-md hover:bg-amber-500 font-bold text-sm transition-colors">
                     {saved ? <><Check className="w-4 h-4"/> Saved</> : 'Save Contract'}

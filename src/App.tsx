@@ -6,19 +6,39 @@ import { SettingsModal } from './components/SettingsModal';
 import { TxHistoryModal } from './components/TxHistoryModal';
 import { AgentsPage } from './components/AgentsPage';
 import { useWallet } from './hooks/useWallet';
-import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot, Copy, X } from 'lucide-react';
+import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot, Copy, X, Menu } from 'lucide-react';
 import { useEscrowStore, useAppStore } from './store';
 import { addresses, arcTestnet, escrowAbi } from './lib/contracts';
+
+import { JobFeed } from './components/JobFeed';
+import { ToastStack } from './components/ToastStack';
+import { scanLogsChunked } from './lib/eventScanning';
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [currentView, setCurrentView] = useState<'escrow' | 'agents'>('escrow');
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [currentView, setCurrentView] = useState<'escrow' | 'agents' | 'feed'>('escrow');
   const { walletAddress, getPublicClient } = useWallet();
   const { transactions, myJobs, setMyJobs, addMyJob } = useAppStore();
   const store = useEscrowStore();
   const [isFetchingJobs, setIsFetchingJobs] = useState(false);
   const [jobStatuses, setJobStatuses] = useState<Record<string, number>>({});
+  const [totalIndexedJobs, setTotalIndexedJobs] = useState<number>(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qsJobId = params.get('jobId');
+    const qsEscrow = params.get('escrow');
+
+    if (qsJobId) {
+      store.setJobId(qsJobId);
+      if (walletAddress) addMyJob(walletAddress, qsJobId);
+    }
+    if (qsEscrow) {
+      store.setEscrowAddress(qsEscrow);
+    }
+  }, [walletAddress]); // run on load and wallet connect
 
   useEffect(() => {
     if (
@@ -40,70 +60,48 @@ export default function App() {
 
          try {
              // We can only filter by indexed args that actually exist in the ABI.
-             // JobCreated signature: event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)
-             const latestBlock = await (publicClient as any).getBlockNumber();
-             
-             const allClientLogs: any[] = [];
-             const allProviderLogs: any[] = [];
-             
-             let currentTo = latestBlock;
-             const MAX_CHUNKS = 5; // Look back up to 50k blocks
-             
-             for (let i = 0; i < MAX_CHUNKS; i++) {
-                 if (currentTo < 0n) break;
-                 const currentFrom = currentTo > 9000n ? currentTo - 9000n : 0n;
-                 
-                 const [cLogs, pLogs] = await Promise.all([
-                     (publicClient as any).getLogs({
-                         address: store.escrowAddress as `0x${string}`,
-                         event: {
-                             type: 'event',
-                             name: 'JobCreated',
-                             inputs: [
-                                 { type: 'uint256', name: 'jobId', indexed: true },
-                                 { type: 'address', name: 'client', indexed: true },
-                                 { type: 'address', name: 'provider', indexed: true },
-                                 { type: 'address', name: 'evaluator', indexed: false },
-                                 { type: 'uint256', name: 'expiredAt', indexed: false },
-                                 { type: 'address', name: 'hook', indexed: false },
-                             ],
-                         },
-                         args: { client: walletAddress as `0x${string}` },
-                         fromBlock: currentFrom,
-                         toBlock: currentTo
-                     }).catch(() => []),
-                     (publicClient as any).getLogs({
-                         address: store.escrowAddress as `0x${string}`,
-                         event: {
-                             type: 'event',
-                             name: 'JobCreated',
-                             inputs: [
-                                 { type: 'uint256', name: 'jobId', indexed: true },
-                                 { type: 'address', name: 'client', indexed: true },
-                                 { type: 'address', name: 'provider', indexed: true },
-                                 { type: 'address', name: 'evaluator', indexed: false },
-                                 { type: 'uint256', name: 'expiredAt', indexed: false },
-                                 { type: 'address', name: 'hook', indexed: false },
-                             ],
-                         },
-                         args: { provider: walletAddress as `0x${string}` },
-                         fromBlock: currentFrom,
-                         toBlock: currentTo
-                     }).catch(() => [])
-                 ]);
-                 
-                 allClientLogs.push(...cLogs);
-                 allProviderLogs.push(...pLogs);
-                 
-                 if (currentFrom === 0n) break;
-                 currentTo = currentFrom - 1n;
-             }
-             
+             const [cLogs, pLogs] = await Promise.all([
+                 scanLogsChunked(publicClient, {
+                     address: store.escrowAddress as `0x${string}`,
+                     event: {
+                         type: 'event',
+                         name: 'JobCreated',
+                         inputs: [
+                             { type: 'uint256', name: 'jobId', indexed: true },
+                             { type: 'address', name: 'client', indexed: true },
+                             { type: 'address', name: 'provider', indexed: true },
+                             { type: 'address', name: 'evaluator', indexed: false },
+                             { type: 'uint256', name: 'expiredAt', indexed: false },
+                             { type: 'address', name: 'hook', indexed: false },
+                         ],
+                     },
+                     args: { client: walletAddress as `0x${string}` }
+                 }, { maxChunks: 5 }),
+                 scanLogsChunked(publicClient, {
+                     address: store.escrowAddress as `0x${string}`,
+                     event: {
+                         type: 'event',
+                         name: 'JobCreated',
+                         inputs: [
+                             { type: 'uint256', name: 'jobId', indexed: true },
+                             { type: 'address', name: 'client', indexed: true },
+                             { type: 'address', name: 'provider', indexed: true },
+                             { type: 'address', name: 'evaluator', indexed: false },
+                             { type: 'uint256', name: 'expiredAt', indexed: false },
+                             { type: 'address', name: 'hook', indexed: false },
+                         ],
+                     },
+                     args: { provider: walletAddress as `0x${string}` }
+                 }, { maxChunks: 5 })
+             ]);
+
              const allJobIds = Array.from(new Set([
-                 ...allClientLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
-                 ...allProviderLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
+                 ...cLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
+                 ...pLogs.map((l: any) => l.args.jobId?.toString()).filter(Boolean),
                  ...(myJobs[walletAddress.toLowerCase()] || []) // Keep existing manually added ones
              ]));
+             
+             setTotalIndexedJobs(allJobIds.length);
 
              if (allJobIds.length > 0) {
                  setMyJobs(walletAddress, allJobIds as string[]);
@@ -146,10 +144,29 @@ export default function App() {
         });
         const results = await Promise.all(batch);
         if (mounted) {
-          for (const r of results) {
-              if (r.status !== null) statuses[r.id] = r.status;
-          }
-          setJobStatuses(prev => ({ ...prev, ...statuses }));
+          setJobStatuses(prev => {
+             const newStatuses = { ...prev };
+             let changed = false;
+             for (const r of results) {
+                 if (r.status !== null) {
+                     if (prev[r.id] !== undefined && prev[r.id] !== r.status) {
+                         // Status changed!
+                         if (useAppStore.getState().notificationsEnabled && 'Notification' in window) {
+                             if (Notification.permission === 'granted') {
+                                 const statusNames = ['Pending', 'Active', 'Review', 'Completed', 'Rejected', 'Expired'];
+                                 new Notification(`Job #${r.id} Updated`, {
+                                     body: `Status changed to ${statusNames[r.status] || r.status}`,
+                                     icon: '/favicon.ico'
+                                 });
+                             }
+                         }
+                     }
+                     newStatuses[r.id] = r.status;
+                     if (prev[r.id] !== r.status) changed = true;
+                 }
+             }
+             return changed ? newStatuses : prev;
+          });
         }
       } catch (e) {
         console.error("fetch status error", e);
@@ -198,6 +215,12 @@ export default function App() {
             </div>
             <div className="h-10 w-px bg-stone-800"></div>
             <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowMobileMenu(true)}
+                className="flex md:hidden items-center justify-center h-9 w-9 text-stone-400 hover:text-stone-200 hover:bg-stone-800 rounded-full transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
               {walletAddress && (
                 <button 
                   onClick={() => setShowHistory(true)}
@@ -220,6 +243,24 @@ export default function App() {
        </header>
 
        <main className="flex flex-1 overflow-hidden">
+          
+          {/* Mobile Overlay Menu */}
+          {showMobileMenu && (
+            <div className="fixed inset-0 bg-black/80 z-50 flex md:hidden" onClick={() => setShowMobileMenu(false)}>
+               <div className="w-64 bg-stone-950 h-full p-6 flex flex-col border-r border-stone-800" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-between items-center mb-8">
+                     <span className="font-serif-display font-bold text-amber-500 text-xl">Arco</span>
+                     <button onClick={() => setShowMobileMenu(false)} className="text-stone-400 p-2"><X className="w-5 h-5"/></button>
+                  </div>
+                  <div className="space-y-4">
+                    <button onClick={() => { setCurrentView('escrow'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'escrow' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Briefcase className="w-5 h-5" /> Escrow Jobs</button>
+                    <button onClick={() => { setCurrentView('feed'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'feed' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Activity className="w-5 h-5" /> Explorer Feed</button>
+                    <button onClick={() => { setCurrentView('agents'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'agents' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Bot className="w-5 h-5" /> ERC-8004 Agents</button>
+                  </div>
+               </div>
+            </div>
+          )}
+
           {/* Left Sidebar */}
           <aside className="w-72 border-r border-subtle p-6 overflow-y-auto shrink-0 hidden md:block">
             <div className="space-y-8">
@@ -232,6 +273,13 @@ export default function App() {
                   >
                     <Briefcase className="w-4 h-4" />
                     Escrow Jobs
+                  </button>
+                  <button 
+                    onClick={() => setCurrentView('feed')}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded ${currentView === 'feed' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400 hover:bg-stone-900/50 hover:text-stone-200'}`}
+                  >
+                    <Activity className="w-4 h-4" />
+                    Explorer Feed
                   </button>
                   <button 
                     onClick={() => setCurrentView('agents')}
@@ -326,7 +374,7 @@ export default function App() {
                  <WalletButton />
               </div>
             ) : (
-              currentView === 'agents' ? <AgentsPage /> : <ERC8183Card />
+              currentView === 'agents' ? <AgentsPage /> : (currentView === 'feed' ? <JobFeed onSelectJob={(id) => { store.setJobId(id); setCurrentView('escrow'); }} /> : <ERC8183Card />)
             )}
           </section>
 
@@ -357,7 +405,7 @@ export default function App() {
                   <span className="text-[10px] font-bold text-amber-500">NETWORK</span>
                 </div>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-[10px] text-stone-500"><span>Connection</span><span className="text-green-500 font-medium">Online</span></div>
+                  <div className="flex justify-between text-[10px] text-stone-500"><span>Jobs Indexed</span><span className="text-stone-300 font-medium">{totalIndexedJobs} Local</span></div>
                 </div>
               </div>
             </div>
@@ -373,6 +421,7 @@ export default function App() {
 
        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
        <TxHistoryModal isOpen={showHistory} onClose={() => setShowHistory(false)} />
+       <ToastStack />
     </div>
   );
 }

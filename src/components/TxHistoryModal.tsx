@@ -64,7 +64,25 @@ export function TxHistoryModal({ isOpen, onClose }: Props) {
         </div>
         
         {myTxs.length > 0 && (
-          <div className="p-4 border-t border-stone-800 bg-stone-950/50 flex justify-end">
+          <div className="p-4 border-t border-stone-800 bg-stone-950/50 flex justify-between">
+            <button 
+              onClick={() => {
+                const csvData = [
+                  ['Action', 'Hash', 'Status', 'Timestamp'],
+                  ...myTxs.map(t => [t.action, t.hash, t.status, new Date(t.timestamp).toISOString()])
+                ].map(e => e.join(",")).join("\n");
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `transactions-${walletAddress?.slice(0,6)}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-stone-300 hover:text-white border border-stone-700 bg-stone-800 hover:bg-stone-700 rounded-lg transition-colors"
+            >
+              Export CSV
+            </button>
             <button 
               onClick={clearTransactions}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"

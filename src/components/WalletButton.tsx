@@ -1,26 +1,53 @@
+import { useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useAppStore } from '../store';
 import { arcTestnet } from '../lib/contracts';
-import { Wallet, LogOut, AlertCircle } from 'lucide-react';
+import { Wallet, LogOut, AlertCircle, X } from 'lucide-react';
 
 export function WalletButton() {
+  const [showOptions, setShowOptions] = useState(false);
   const { walletAddress, chainId } = useAppStore();
-  const { connect, disconnect, switchToArcTestnet, isConnecting } = useWallet();
+  const { connect, disconnect, switchToArcTestnet, isConnecting, providers } = useWallet();
 
   const formatAddress = (addr: string) => {
     return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
   };
 
+  const handleConnect = (prov?: any) => {
+     setShowOptions(false);
+     connect(prov);
+  };
+
   if (!walletAddress) {
     return (
-      <button
-        onClick={connect}
-        disabled={isConnecting}
-        className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-black rounded font-bold transition-colors disabled:opacity-75 disabled:cursor-not-allowed text-sm"
-      >
-        <Wallet className="w-4 h-4" />
-        {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-      </button>
+      <div className="relative">
+        <button
+          onClick={() => providers.length > 0 ? setShowOptions(!showOptions) : handleConnect()}
+          disabled={isConnecting}
+          className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-black rounded font-bold transition-colors disabled:opacity-75 disabled:cursor-not-allowed text-sm"
+        >
+          <Wallet className="w-4 h-4" />
+          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+        </button>
+        {showOptions && providers.length > 0 && (
+          <div className="absolute top-12 right-0 w-64 bg-stone-900 border border-stone-700 rounded-lg shadow-xl p-2 z-50">
+            <div className="flex justify-between items-center mb-2 px-2 pt-1">
+               <span className="text-xs font-bold text-stone-400 uppercase tracking-widest">Select Wallet</span>
+               <button onClick={()=>setShowOptions(false)} className="text-stone-500 hover:text-stone-300"><X className="w-4 h-4"/></button>
+            </div>
+            {providers.map(p => (
+               <button 
+                  key={p.info.uuid} 
+                  onClick={() => handleConnect(p.provider)}
+                  className="w-full flex items-center gap-3 p-3 hover:bg-stone-800 rounded transition-colors text-left"
+               >
+                  {p.info.icon && <img src={p.info.icon} alt={p.info.name} className="w-6 h-6 rounded" />}
+                  <span className="text-stone-200 font-medium">{p.info.name}</span>
+               </button>
+            ))}
+          </div>
+        )}
+      </div>
     );
   }
 
