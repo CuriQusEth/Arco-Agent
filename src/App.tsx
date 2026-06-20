@@ -6,7 +6,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { TxHistoryModal } from './components/TxHistoryModal';
 import { AgentsPage } from './components/AgentsPage';
 import { useWallet } from './hooks/useWallet';
-import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot } from 'lucide-react';
+import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot, Copy, X } from 'lucide-react';
 import { useEscrowStore, useAppStore } from './store';
 import { addresses, arcTestnet, escrowAbi } from './lib/contracts';
 
@@ -261,12 +261,34 @@ export default function App() {
                       activeJobs.map((id) => (
                           <div key={id} 
                                onClick={() => store.setJobId(id.toString())}
-                               className={`cursor-pointer p-3 rounded-lg border ${store.jobId === id ? 'border-amber-600/50 bg-stone-900/60' : 'border-stone-800 bg-stone-900/30 hover:border-stone-600'} transition-colors`}>
+                               className={`group cursor-pointer p-3 rounded-lg border ${store.jobId === id ? 'border-amber-600/50 bg-stone-900/60' : 'border-stone-800 bg-stone-900/30 hover:border-stone-600'} transition-colors`}>
                              <div className="flex justify-between items-center mb-1">
                                <div className="flex items-center gap-2">
-                                 <div className="text-xs font-bold text-stone-200">JOB #{id}</div>
+                                 <div className="flex items-center gap-1.5">
+                                   <div className="text-xs font-bold text-stone-200">JOB #{id}</div>
+                                   <button 
+                                     onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(id.toString()); }}
+                                     className="text-stone-500 hover:text-amber-500 transition-colors"
+                                     title="Copy Job ID"
+                                   >
+                                     <Copy className="w-3 h-3" />
+                                   </button>
+                                 </div>
                                  {getStatusTag(jobStatuses[id])}
                                </div>
+                               <button
+                                 onClick={(e) => {
+                                     e.stopPropagation();
+                                     if (!walletAddress) return;
+                                     const newList = activeJobs.filter(j => j !== id);
+                                     setMyJobs(walletAddress, newList);
+                                     if (store.jobId === id.toString()) store.setJobId(null);
+                                 }}
+                                 className="text-stone-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                                 title="Remove from sidebar"
+                               >
+                                 <X className="w-3 h-3" />
+                               </button>
                              </div>
                              <div className="text-[10px] text-stone-500">Click to view details</div>
                           </div>
