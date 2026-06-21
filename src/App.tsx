@@ -54,7 +54,7 @@ export default function App() {
   useEffect(() => {
      if (!walletAddress || !store.escrowAddress) return;
      const fetchJobs = async () => {
-         const publicClient = getPublicClient();
+         const publicClient = getPublicClient() as any;
          if (!publicClient) return;
          setIsFetchingJobs(true);
 
@@ -121,7 +121,7 @@ export default function App() {
 
   useEffect(() => {
     if (!walletAddress || activeJobs.length === 0) return;
-    const publicClient = getPublicClient();
+    const publicClient = getPublicClient() as any;
     if (!publicClient) return;
 
     let mounted = true;

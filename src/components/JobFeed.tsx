@@ -13,7 +13,7 @@ export function JobFeed({ onSelectJob }: { onSelectJob: (id: string) => void }) 
   const [search, setSearch] = useState('');
 
   const fetchFeed = async () => {
-    const publicClient = getPublicClient();
+    const publicClient = getPublicClient() as any;
     if (!publicClient || !store.escrowAddress) return;
     
     setLoading(true);
