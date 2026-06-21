@@ -5,7 +5,6 @@ import { ERC8183Card } from './components/ERC8183Card';
 import { SettingsModal } from './components/SettingsModal';
 import { TxHistoryModal } from './components/TxHistoryModal';
 import { AgentsPage } from './components/AgentsPage';
-import { CircleIntegrationTest } from './components/CircleIntegrationTest';
 import { useWallet } from './hooks/useWallet';
 import { Settings, History, Shield, Activity, RefreshCw, Briefcase, Bot, Copy, X, Menu } from 'lucide-react';
 import { useEscrowStore, useAppStore } from './store';
@@ -19,7 +18,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [currentView, setCurrentView] = useState<'escrow' | 'agents' | 'feed' | 'circle'>('escrow');
+  const [currentView, setCurrentView] = useState<'escrow' | 'agents' | 'feed'>('escrow');
   const { walletAddress, getPublicClient } = useWallet();
   const { transactions, myJobs, setMyJobs, addMyJob } = useAppStore();
   const store = useEscrowStore();
@@ -257,7 +256,6 @@ export default function App() {
                     <button onClick={() => { setCurrentView('escrow'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'escrow' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Briefcase className="w-5 h-5" /> Escrow Jobs</button>
                     <button onClick={() => { setCurrentView('feed'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'feed' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Activity className="w-5 h-5" /> Explorer Feed</button>
                     <button onClick={() => { setCurrentView('agents'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'agents' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Bot className="w-5 h-5" /> ERC-8004 Agents</button>
-                    <button onClick={() => { setCurrentView('circle'); setShowMobileMenu(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg ${currentView === 'circle' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400'}`}><Activity className="w-5 h-5" /> Circle SDK Test</button>
                   </div>
                </div>
             </div>
@@ -289,13 +287,6 @@ export default function App() {
                   >
                     <Bot className="w-4 h-4" />
                     ERC-8004 Agents
-                  </button>
-                  <button 
-                    onClick={() => setCurrentView('circle')}
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded ${currentView === 'circle' ? 'bg-amber-600/10 text-amber-500' : 'text-stone-400 hover:bg-stone-900/50 hover:text-stone-200'}`}
-                  >
-                    <Activity className="w-4 h-4" />
-                    Circle SDK Test
                   </button>
                 </div>
               </section>
@@ -383,7 +374,7 @@ export default function App() {
                  <WalletButton />
               </div>
             ) : (
-              currentView === 'circle' ? <CircleIntegrationTest /> : currentView === 'agents' ? <AgentsPage /> : (currentView === 'feed' ? <JobFeed onSelectJob={(id) => { store.setJobId(id); setCurrentView('escrow'); }} /> : <ERC8183Card />)
+              currentView === 'agents' ? <AgentsPage /> : (currentView === 'feed' ? <JobFeed onSelectJob={(id) => { store.setJobId(id); setCurrentView('escrow'); }} /> : <ERC8183Card />)
             )}
           </section>
 
