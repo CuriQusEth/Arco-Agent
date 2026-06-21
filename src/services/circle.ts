@@ -1,4 +1,5 @@
-import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
+import circlePkg from "@circle-fin/developer-controlled-wallets";
+const { initiateDeveloperControlledWalletsClient } = circlePkg;
 import crypto from "crypto";
 
 let circleClientInstance: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;

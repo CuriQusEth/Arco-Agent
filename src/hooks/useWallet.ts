@@ -3,7 +3,7 @@ import { createWalletClient, createPublicClient, custom, http, webSocket, isAddr
 import { arcTestnet, addresses, erc20Abi } from '../lib/contracts';
 import { useAppStore } from '../store';
 
-let activeProviderInstance: any = null;
+const activeProviderRef = { current: null as any };
 
 export function useWallet() {
   const { walletAddress, setWallet } = useAppStore();
@@ -29,7 +29,7 @@ export function useWallet() {
   }, []);
 
   const getPublicClient = () => {
-    const p = activeProviderInstance || window.ethereum;
+    const p = activeProviderRef.current || window.ethereum;
     return createPublicClient({
       chain: arcTestnet,
       transport: p ? custom(p) : http(),
@@ -37,7 +37,7 @@ export function useWallet() {
   };
 
   const getWalletClient = () => {
-    const p = activeProviderInstance || window.ethereum;
+    const p = activeProviderRef.current || window.ethereum;
     if (!p) return null;
     return createWalletClient({
       chain: arcTestnet,
@@ -87,7 +87,7 @@ export function useWallet() {
 
     try {
       setIsConnecting(true);
-      activeProviderInstance = providerToUse;
+      activeProviderRef.current = providerToUse;
       
       const walletClient = createWalletClient({
         chain: arcTestnet,
@@ -120,7 +120,7 @@ export function useWallet() {
   };
 
   const switchToArcTestnet = async (fallbackProvider?: any) => {
-    const providerToUse = fallbackProvider || activeProviderInstance || window.ethereum;
+    const providerToUse = fallbackProvider || activeProviderRef.current || window.ethereum;
     if (!providerToUse) return;
     setError(null);
     try {
@@ -164,7 +164,7 @@ export function useWallet() {
   };
 
   const disconnect = () => {
-    activeProviderInstance = null;
+    activeProviderRef.current = null;
     setWallet(null, null);
     setNativeBalance(null);
     setUsdcBalance(null);
@@ -172,7 +172,7 @@ export function useWallet() {
 
   // EIP-1193 events
   useEffect(() => {
-    const p = activeProviderInstance || window.ethereum;
+    const p = activeProviderRef.current || window.ethereum;
     if (!p) return;
 
     const handleAccountsChanged = (accounts: string[]) => {
@@ -203,11 +203,11 @@ export function useWallet() {
         p.removeListener('chainChanged', handleChainChanged);
       }
     };
-  }, [fetchBalances, activeProviderInstance]);
+  }, [fetchBalances, activeProviderRef.current]);
 
   // Initial load
   useEffect(() => {
-    const p = activeProviderInstance || window.ethereum;
+    const p = activeProviderRef.current || window.ethereum;
     if (walletAddress && p) {
        p.request({ method: 'eth_chainId' }).then((chainIdHex: any) => {
          const chainId = parseInt(chainIdHex, 16);
