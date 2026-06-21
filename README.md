@@ -25,12 +25,39 @@ It provides an interface for trustless interactions between clients, AI Agents (
    npm install
    ```
 
-2. Run the development server:
+2. Setup Environment Variables:
+   ```bash
+   cp .env.example .env
+   ```
+   Add your Circle API credentials to `.env`:
+   ```env
+   CIRCLE_API_KEY=YOUR_API_KEY
+   CIRCLE_ENTITY_SECRET=YOUR_ENTITY_SECRET
+   ```
+
+3. Run the development server:
    ```bash
    npm run dev
    ```
 
-3. Connect your wallet via Arc Testnet.
+4. Connect your wallet via Arc Testnet.
+
+## Circle Developer-Controlled Wallets Integration
+
+This application utilizes Circle Developer-Controlled Wallets to manage transactions on-chain programmatically. 
+
+**Security Rules Executed:**
+- `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` are never hardcoded in the source code.
+- Credentials are read securely from the `.env` file via `process.env`.
+- Circle operations (wallet creation, balance checks, transactions) are strictly isolated to the backend Express server (`/api/wallet/*`).
+- Secrets are NEVER sent to the client-side React frontend or exposed in logs.
+- The `.env` file is excluded from version control via `.gitignore`.
+
+### Production Deployment
+
+For production environments (e.g., Railway, Render, Vercel, VPS):
+- Set your environment variables strictly in the platform's secret manager interface.
+- **Do not** push the `.env` file or export your secrets to GitHub.
 
 ## License
 
