@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '../store';
 import { arcTestnet } from '../lib/contracts';
 import { CheckCircle2, Clock, XCircle, ExternalLink } from 'lucide-react';
@@ -6,17 +6,25 @@ import { CheckCircle2, Clock, XCircle, ExternalLink } from 'lucide-react';
 export function ToastStack() {
   const { transactions } = useAppStore();
   const [visibleTxs, setVisibleTxs] = useState<string[]>([]);
+  const resolvedTimes = useRef<Record<string, number>>({});
   const recentTxs = transactions.slice(0, 5);
 
   useEffect(() => {
-    // Collect tx that should be visible (pending or recently completed)
     const updateVisible = () => {
         const now = Date.now();
         const active = recentTxs.filter(tx => {
-           if (tx.status === 'pending') return true;
-           // show completed/reverted for 5 seconds
-           return (now - tx.timestamp) < 5000;
+           if (tx.status === 'pending') {
+             delete resolvedTimes.current[tx.hash];
+             return true;
+           }
+           
+           if (!resolvedTimes.current[tx.hash]) {
+             resolvedTimes.current[tx.hash] = now;
+           }
+           
+           return (now - resolvedTimes.current[tx.hash]) < 5000;
         }).map(t => t.hash);
+        
         setVisibleTxs(active);
     };
     

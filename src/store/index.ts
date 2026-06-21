@@ -5,6 +5,7 @@ export interface TransactionRecord {
   hash: string;
   action: string;
   timestamp: number;
+  resolvedAt?: number;
   status: 'pending' | 'success' | 'reverted';
   chainId: number;
   from: string;

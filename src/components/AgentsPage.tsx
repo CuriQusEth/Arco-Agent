@@ -158,7 +158,11 @@ function AgentProfile() {
     }
   };
 
-  const avgScore = feedback.length > 0 ? feedback.reduce((sum, f) => sum + Number(f.value), 0) / feedback.length : null;
+  const avgScore = feedback.length > 0 ? feedback.reduce((sum, f) => {
+     const val = Number(f.value);
+     const dec = Number(f.valueDecimals || 0);
+     return sum + (val / (10 ** dec));
+  }, 0) / feedback.length : null;
 
   return (
     <div className="space-y-6">

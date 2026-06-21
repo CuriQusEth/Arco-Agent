@@ -26,19 +26,33 @@ export default function App() {
   const [jobStatuses, setJobStatuses] = useState<Record<string, number>>({});
   const [totalIndexedJobs, setTotalIndexedJobs] = useState<number>(0);
 
+  const [initialParamsApplied, setInitialParamsApplied] = useState(false);
+
   useEffect(() => {
+    if (initialParamsApplied) return;
     const params = new URLSearchParams(window.location.search);
     const qsJobId = params.get('jobId');
     const qsEscrow = params.get('escrow');
 
-    if (qsJobId) {
-      store.setJobId(qsJobId);
-      if (walletAddress) addMyJob(walletAddress, qsJobId);
+    if (qsJobId || qsEscrow) {
+      if (qsJobId) {
+        store.setJobId(qsJobId);
+        if (walletAddress) addMyJob(walletAddress, qsJobId);
+      }
+      if (qsEscrow) {
+        store.setEscrowAddress(qsEscrow);
+      }
+      
+      // Clear URL params
+      const url = new URL(window.location.href);
+      url.searchParams.delete('jobId');
+      url.searchParams.delete('escrow');
+      window.history.replaceState({}, '', url.toString());
+      setInitialParamsApplied(true);
+    } else {
+      setInitialParamsApplied(true);
     }
-    if (qsEscrow) {
-      store.setEscrowAddress(qsEscrow);
-    }
-  }, [walletAddress]); // run on load and wallet connect
+  }, [walletAddress, initialParamsApplied]);
 
   useEffect(() => {
     if (

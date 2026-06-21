@@ -39,7 +39,7 @@ export function JobFeed({ onSelectJob }: { onSelectJob: (id: string) => void }) 
             client: (log as any).args.client,
             provider: (log as any).args.provider,
             evaluator: (log as any).args.evaluator,
-            time: Number((log as any).args.expiredAt) - (3600 * 24 * 30) // Apprx creation time
+            time: Number((log as any).blockNumber || 0) // Exact relative order
         }));
 
         const unique = new Map();

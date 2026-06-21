@@ -3,7 +3,7 @@ import { createWalletClient, createPublicClient, custom, http, webSocket, isAddr
 import { arcTestnet, addresses, erc20Abi } from '../lib/contracts';
 import { useAppStore } from '../store';
 
-let watchClientInstance: any = null;
+let activeProviderInstance: any = null;
 
 export function useWallet() {
   const { walletAddress, setWallet } = useAppStore();
@@ -29,34 +29,19 @@ export function useWallet() {
   }, []);
 
   const getPublicClient = () => {
+    const p = activeProviderInstance || window.ethereum;
     return createPublicClient({
       chain: arcTestnet,
-      transport: window.ethereum ? custom(window.ethereum) : http(),
+      transport: p ? custom(p) : http(),
     });
   };
 
-  const getWatchClient = () => {
-    if (!watchClientInstance) {
-      if (arcTestnet.rpcUrls.default.webSocket) {
-        watchClientInstance = createPublicClient({
-          chain: arcTestnet,
-          transport: webSocket(arcTestnet.rpcUrls.default.webSocket[0]),
-        });
-      } else {
-        watchClientInstance = createPublicClient({
-          chain: arcTestnet,
-          transport: http(arcTestnet.rpcUrls.default.http[0]),
-        });
-      }
-    }
-    return watchClientInstance;
-  };
-
   const getWalletClient = () => {
-    if (!window.ethereum) return null;
+    const p = activeProviderInstance || window.ethereum;
+    if (!p) return null;
     return createWalletClient({
       chain: arcTestnet,
-      transport: custom(window.ethereum),
+      transport: custom(p),
     });
   };
 
@@ -102,6 +87,8 @@ export function useWallet() {
 
     try {
       setIsConnecting(true);
+      activeProviderInstance = providerToUse;
+      
       const walletClient = createWalletClient({
         chain: arcTestnet,
         transport: custom(providerToUse),
@@ -133,7 +120,7 @@ export function useWallet() {
   };
 
   const switchToArcTestnet = async (fallbackProvider?: any) => {
-    const providerToUse = fallbackProvider || window.ethereum;
+    const providerToUse = fallbackProvider || activeProviderInstance || window.ethereum;
     if (!providerToUse) return;
     setError(null);
     try {
@@ -145,7 +132,7 @@ export function useWallet() {
       // 4902 indicates chain not added
       if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
         try {
-          await window.ethereum.request({
+          await providerToUse.request({
             method: 'wallet_addEthereumChain',
             params: [
               {
@@ -171,12 +158,13 @@ export function useWallet() {
     }
     
     // Check if connected after switch
-    if (walletAddress) {
-       await fetchBalances(walletAddress);
+    if (useAppStore.getState().walletAddress) {
+       await fetchBalances(useAppStore.getState().walletAddress!);
     }
   };
 
   const disconnect = () => {
+    activeProviderInstance = null;
     setWallet(null, null);
     setNativeBalance(null);
     setUsdcBalance(null);
@@ -184,7 +172,8 @@ export function useWallet() {
 
   // EIP-1193 events
   useEffect(() => {
-    if (!window.ethereum) return;
+    const p = activeProviderInstance || window.ethereum;
+    if (!p) return;
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
@@ -205,19 +194,22 @@ export function useWallet() {
       }
     };
 
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
+    p.on('accountsChanged', handleAccountsChanged);
+    p.on('chainChanged', handleChainChanged);
 
     return () => {
-      window.ethereum?.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum?.removeListener('chainChanged', handleChainChanged);
+      if (p && p.removeListener) {
+        p.removeListener('accountsChanged', handleAccountsChanged);
+        p.removeListener('chainChanged', handleChainChanged);
+      }
     };
-  }, [fetchBalances]);
+  }, [fetchBalances, activeProviderInstance]);
 
   // Initial load
   useEffect(() => {
-    if (walletAddress && window.ethereum) {
-       window.ethereum.request({ method: 'eth_chainId' }).then((chainIdHex: any) => {
+    const p = activeProviderInstance || window.ethereum;
+    if (walletAddress && p) {
+       p.request({ method: 'eth_chainId' }).then((chainIdHex: any) => {
          const chainId = parseInt(chainIdHex, 16);
          setWallet(walletAddress, chainId);
          if (chainId === arcTestnet.id) {
@@ -238,7 +230,6 @@ export function useWallet() {
     disconnect,
     switchToArcTestnet,
     getPublicClient,
-    getWatchClient,
     getWalletClient,
     providers,
   };

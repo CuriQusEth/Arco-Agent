@@ -50,6 +50,7 @@ This application utilizes Circle Developer-Controlled Wallets to manage transact
 - `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET` are never hardcoded in the source code.
 - Credentials are read securely from the `.env` file via `process.env`.
 - Circle operations (wallet creation, balance checks, transactions) are strictly isolated to the backend Express server (`/api/wallet/*`).
+- **Authentication**: API routes are protected by a signed-message challenge verifying wallet ownership, mapped to an internal session to ensure clients cannot access or move funds from other users' Developer-Controlled Wallets.
 - Secrets are NEVER sent to the client-side React frontend or exposed in logs.
 - The `.env` file is excluded from version control via `.gitignore`.
 
