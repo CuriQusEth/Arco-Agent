@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { createCircleWallet, getCircleWalletBalance, transferCircleTokens } from '../lib/circleClient.js';
+import { getCircleWalletBalance, transferCircleTokens } from '../lib/circleClient.js';
 
 export function CircleIntegrationTest() {
   const [walletId, setWalletId] = useState<string>('');
-  const [address, setAddress] = useState<string>('');
   const [balance, setBalance] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -11,23 +10,6 @@ export function CircleIntegrationTest() {
   const [transferAmount, setTransferAmount] = useState('');
   const [tokenId, setTokenId] = useState('');
   const [transferResult, setTransferResult] = useState<any>(null);
-
-  const handleCreateWallet = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await createCircleWallet();
-      const wallet = data.wallets?.[0];
-      if (wallet) {
-        setWalletId(wallet.id);
-        setAddress(wallet.address);
-      }
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleGetBalance = async () => {
     if (!walletId) return;
@@ -68,21 +50,14 @@ export function CircleIntegrationTest() {
       )}
 
       <div className="space-y-2">
-        <h3 className="font-medium text-stone-300">1. Wallet Operations</h3>
-        <button 
-          onClick={handleCreateWallet} 
-          disabled={loading}
-          className="px-4 py-2 bg-amber-600 text-black font-medium rounded hover:bg-amber-500 disabled:opacity-50"
-        >
-          Create New Wallet (ARC-TESTNET)
-        </button>
-        
-        {walletId && (
-          <div className="text-sm text-stone-400 mt-2 space-y-1">
-            <div><span className="font-semibold">Wallet ID:</span> {walletId}</div>
-            <div><span className="font-semibold">Address:</span> {address}</div>
-          </div>
-        )}
+        <h3 className="font-medium text-stone-300">1. Wallet Setup</h3>
+        <input 
+          type="text" 
+          placeholder="Enter Existing Wallet ID" 
+          value={walletId}
+          onChange={(e) => setWalletId(e.target.value)}
+          className="w-full bg-stone-950 border border-stone-800 rounded px-3 py-2 text-sm text-stone-200"
+        />
       </div>
 
       <div className="space-y-2 pt-4 border-t border-stone-800">
