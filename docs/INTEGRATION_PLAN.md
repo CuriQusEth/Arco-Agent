@@ -524,6 +524,37 @@ identity" is provable, not asserted.
 - Extend the existing ad-hoc `test-give-feedback.ts` / `test-reputation.ts` to
   assert a real `feedbackHash`/`feedbackURI` round-trips.
 
+### Validated round-trip (live)
+
+`scripts/mnemonic-roundtrip.ts` drives the **real Arco proxy** against a live
+local `mnemonic-mcp` (`STORAGE_MODE=local`, fastembed embeddings), using a
+genuine EIP-191 signed challenge (via `viem`). Result: **PASS** —
+
+1. `sign` → HTTP 200, 32-byte blake3 `content_hash` from a COSE-signed artifact.
+2. `recall` → returns the memory; its `content_hash` matches the signed hash
+   (the on-chain `bytes32` ↔ signed-memory linkage — this *is* the verification).
+3. `verify` → HTTP 200, structured result forwarded through the proxy.
+4. unauthenticated call → HTTP 401 (auth guard holds).
+
+Run it with both servers up:
+```bash
+# 1) mnemonic-mcp (local mode) on :4000  — needs libdbus-1-dev, MCP_JWT_SECRET,
+#    MCP_REFRESH_SALT, and the fastembed model in the hf-hub cache.
+# 2) Arco proxy on :3000 with MNEMONIC_MCP_URL + MNEMONIC_JWT (sign/verify
+#    require a Bearer JWT; recall is allowlisted open).
+ARCO_URL=http://localhost:3000 npx tsx scripts/mnemonic-roundtrip.ts
+```
+
+**Two findings surfaced by the live run:**
+- **Express 5 SPA catch-all bug (fixed):** `app.get('*', …)` crashes `npm start`
+  in production under Express 5 / router v2; corrected to `app.get('/*splat', …)`.
+- **Mnemonic local-mode `verify` caveat (upstream):** in `local` mode the tool
+  rehashes the *raw content* and compares it to the stored hash, which is
+  `blake3(canonical_cbor)` — so it reports `tampered` for untampered local rows.
+  Integrity in local mode is therefore proven via **recall + hash-match** (what
+  `MnemonicVerify` already does for the non-anchored path); the COSE/anchor
+  verify path applies in `participate` mode. Not an Arco bug.
+
 ---
 
 ## 17. Phased rollout / task checklist
