@@ -3,6 +3,8 @@ import { useWallet } from '../hooks/useWallet';
 import { useAgentIdentity } from '../hooks/useAgentIdentity';
 import { useAgentReputation } from '../hooks/useAgentReputation';
 import { useAgentValidation } from '../hooks/useAgentValidation';
+import { useMnemonic } from '../hooks/useMnemonic';
+import { useAppStore } from '../store';
 import { addresses, reputationAbi, validationAbi } from '../lib/contracts';
 import { Shield, CheckCircle, XCircle, Search, Bot } from 'lucide-react';
 import { useAgentStore } from '../store/agentStore';
@@ -266,9 +268,12 @@ function Reputation() {
   const { walletAddress } = useWallet();
   const { getAgentInfo } = useAgentIdentity();
   const { giveFeedback, isLoading } = useAgentReputation();
+  const { signForChain } = useMnemonic();
+  const { mnemonicMode } = useAppStore();
   const [agentId, setAgentId] = useState('');
   const [score, setScore] = useState(95);
   const [tag, setTag] = useState('successful_trade');
+  const [details, setDetails] = useState('');
   const [msg, setMsg] = useState('');
 
   const submit = async () => {
@@ -281,9 +286,15 @@ function Reputation() {
         if (info.owner.toLowerCase() === walletAddress?.toLowerCase()) {
            throw new Error("Agents cannot give feedback on themselves. Please switch wallet.");
         }
+        // Sign the feedback as a verifiable memory: feedbackHash = blake3,
+        // feedbackURI = recall handle (instead of keccak(tag) + "").
+        setMsg('Signing verifiable feedback...');
+        const memo =
+          `arco/erc8004 feedback agent:${agentId} score:${score} tag:${tag}\n${details || tag}`;
+        const signed = await signForChain(memo, { mode: mnemonicMode });
         setMsg('Submitting...');
-        await giveFeedback(agentId, score, tag);
-        setMsg('Success!');
+        await giveFeedback(agentId, score, tag, signed.uri, signed.bytes32);
+        setMsg('Success! Feedback anchored: ' + signed.result.content_hash.slice(0, 16) + '…');
      } catch (e: any) {
         setMsg('Error: ' + e.message);
      }
@@ -295,6 +306,7 @@ function Reputation() {
       <input type="text" placeholder="Agent ID" value={agentId} onChange={e=>setAgentId(e.target.value)} className="w-full mb-4 rounded border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-200" />
       <input type="number" placeholder="Score (0-100)" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-full mb-4 rounded border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-200" />
       <input type="text" placeholder="Tag (e.g. successful_trade)" value={tag} onChange={e=>setTag(e.target.value)} className="w-full mb-4 rounded border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-200" />
+      <textarea placeholder="Feedback details (signed & anchored as a verifiable memory)" value={details} onChange={e=>setDetails(e.target.value)} rows={3} className="w-full mb-4 rounded border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-200" />
       <button onClick={submit} disabled={isLoading} className="w-full bg-stone-800 hover:bg-stone-700 py-3 rounded text-stone-200 text-sm font-bold tracking-wide uppercase disabled:opacity-50">
          {isLoading ? 'Wait...' : 'Give Feedback'}
       </button>
@@ -307,6 +319,8 @@ function Validation() {
   const { walletAddress } = useWallet();
   const { getAgentInfo } = useAgentIdentity();
   const { requestValidation, submitValidationResponse, getValidationStatus, isLoading } = useAgentValidation();
+  const { signForChain } = useMnemonic();
+  const { mnemonicMode } = useAppStore();
   const [mode, setMode] = useState<'request' | 'response' | 'check'>('request');
   const [agentId, setAgentId] = useState('');
   const [validator, setValidator] = useState('');
@@ -337,9 +351,16 @@ function Validation() {
        if ((status[0] as string).toLowerCase() !== walletAddress?.toLowerCase()) {
            throw new Error("Only the specified validator can respond. Please switch wallet.");
        }
+       // Sign the validator's report as a verifiable memory; the blake3 hash
+       // and recall URI become the on-chain responseHash / responseURI.
+       const tag = responseScore >= 50 ? 'kyc_verified' : 'kyc_failed';
+       setMsg('Signing verifiable report...');
+       const memo =
+         `arco/erc8004 validation-response req:${reqHash} result:${tag} score:${responseScore}`;
+       const signed = await signForChain(memo, { mode: mnemonicMode });
        setMsg('Responding...');
-       await submitValidationResponse(reqHash, responseScore, responseScore >= 50 ? 'kyc_verified' : 'kyc_failed');
-       setMsg('Success!');
+       await submitValidationResponse(reqHash, responseScore, tag, signed.uri, signed.bytes32);
+       setMsg('Success! Report anchored: ' + signed.result.content_hash.slice(0, 16) + '…');
      } catch (e:any) { setMsg(e.message); }
   };
 

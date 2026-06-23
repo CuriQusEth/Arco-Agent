@@ -22,6 +22,56 @@ const sendLimiter = rateLimit({
   message: { error: "Transfer rate limit exceeded." }
 });
 
+// Mnemonic MCP proxy — forwards JSON-RPC `tools/call` to the Mnemonic server.
+// The Mnemonic identity / JWT stays server-side and is never sent to the client.
+const MNEMONIC_URL = process.env.MNEMONIC_MCP_URL || "https://mcp.mnemonik.xyz/mcp";
+const MNEMONIC_JWT = process.env.MNEMONIC_JWT;
+
+class MnemonicRpcError extends Error {
+  code: number;
+  data: any;
+  constructor(message: string, code: number, data: any) {
+    super(message);
+    this.code = code;
+    this.data = data;
+  }
+}
+
+async function mnemonicCall(name: string, args: Record<string, unknown>): Promise<any> {
+  const resp = await fetch(MNEMONIC_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(MNEMONIC_JWT ? { Authorization: `Bearer ${MNEMONIC_JWT}` } : {}),
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: { name, arguments: args },
+    }),
+  });
+
+  if (!resp.ok) {
+    throw new MnemonicRpcError(`Mnemonic endpoint returned HTTP ${resp.status}`, -32099, null);
+  }
+
+  const json: any = await resp.json();
+  if (json.error) {
+    throw new MnemonicRpcError(
+      json.error.message || "Mnemonic error",
+      json.error.code ?? -32603,
+      json.error.data,
+    );
+  }
+
+  // MCP tool results arrive as { result: { content: [{ type, text }] } } or
+  // as a structured result object. Normalize both.
+  const result = json.result;
+  const text = result?.content?.[0]?.text;
+  return text ? JSON.parse(text) : result;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -123,6 +173,83 @@ async function startServer() {
       res.json(data);
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to transfer tokens" });
+    }
+  });
+
+  // --- Mnemonic verifiable-memory proxy ---------------------------------
+  // Sign content as a Mnemonic memory; the returned blake3 content_hash is
+  // embedded on-chain (ERC-8183 deliverable / ERC-8004 feedbackHash, etc.).
+  app.post("/api/mnemonic/sign", requireAuth, sendLimiter, async (req, res) => {
+    try {
+      const { content, mode, visibility, confirm } = req.body;
+      if (!content || typeof content !== "string") {
+        res.status(400).json({ error: "content (string) is required" });
+        return;
+      }
+      const resolvedMode = mode || process.env.MNEMONIC_DEFAULT_MODE || "local";
+      const args: Record<string, unknown> = { content, mode: resolvedMode };
+      if (resolvedMode === "participate") {
+        args.visibility = visibility || process.env.MNEMONIC_DEFAULT_VISIBILITY || "public";
+      }
+
+      // Participate + public writes require an explicit confirmation ceremony.
+      // Only run it when the client has confirmed; otherwise surface the gate.
+      if (confirm && resolvedMode === "participate") {
+        try {
+          const pre = await mnemonicCall("mnemonic_sign_memory", args);
+          res.json(pre);
+          return;
+        } catch (gate: any) {
+          if (gate instanceof MnemonicRpcError && gate.code === -32095) {
+            const contentHash = gate.data?.content_hash;
+            const conf = await mnemonicCall("request_public_write_confirmation", {
+              content_hash: contentHash,
+            });
+            const token = conf?.confirmation_token || conf?.token || conf?.confirmationToken;
+            const out = await mnemonicCall("mnemonic_sign_memory", {
+              ...args,
+              confirmation_token: token,
+            });
+            res.json(out);
+            return;
+          }
+          throw gate;
+        }
+      }
+
+      const out = await mnemonicCall("mnemonic_sign_memory", args);
+      res.json(out);
+    } catch (e: any) {
+      if (e instanceof MnemonicRpcError && e.code === -32095) {
+        // Public-write gate: ask the client to confirm and retry.
+        res.status(409).json({ error: e.message, code: e.code, data: e.data });
+        return;
+      }
+      res.status(500).json({ error: e.message || "Mnemonic sign failed" });
+    }
+  });
+
+  app.post("/api/mnemonic/recall", requireAuth, async (req, res) => {
+    try {
+      const out = await mnemonicCall("mnemonic_recall", { query: req.body.query });
+      res.json(out);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Mnemonic recall failed" });
+    }
+  });
+
+  app.post("/api/mnemonic/verify", requireAuth, async (req, res) => {
+    try {
+      const { content, expected_hash, solana_tx, arweave_tx } = req.body;
+      const out = await mnemonicCall("mnemonic_verify", {
+        content,
+        expected_hash,
+        solana_tx,
+        arweave_tx,
+      });
+      res.json(out);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Mnemonic verify failed" });
     }
   });
 

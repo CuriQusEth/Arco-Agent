@@ -11,7 +11,7 @@ interface Props {
 
 export function SettingsModal({ isOpen, onClose }: Props) {
   const store = useEscrowStore();
-  const { notificationsEnabled, setNotificationsEnabled } = useAppStore();
+  const { notificationsEnabled, setNotificationsEnabled, mnemonicMode, setMnemonicMode } = useAppStore();
   const [addrInput, setAddrInput] = useState(store.escrowAddress || addresses.defaultEscrow || '');
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
@@ -84,6 +84,26 @@ export function SettingsModal({ isOpen, onClose }: Props) {
                     >
                        <div className={`w-4 h-4 rounded-full bg-white transition-transform ${notificationsEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                     </button>
+                 </div>
+               </div>
+
+               <div>
+                 <div className="text-sm font-medium text-stone-300 mb-1">Verifiable Memory (Mnemonic)</div>
+                 <div className="text-xs text-stone-500 mb-3">
+                   Deliverables, evaluations and feedback are signed as Mnemonic memories;
+                   the blake3 hash is written on-chain. <span className="text-stone-400">Local</span> is free and offline;
+                   <span className="text-stone-400"> Participate</span> anchors on Solana/Arweave (may require confirmation).
+                 </div>
+                 <div className="grid grid-cols-2 gap-2">
+                   {(['local', 'participate'] as const).map((m) => (
+                     <button
+                       key={m}
+                       onClick={() => setMnemonicMode(m)}
+                       className={`px-3 py-2 rounded-md text-xs font-bold uppercase tracking-wide border transition-colors ${mnemonicMode === m ? 'border-amber-500 bg-amber-600/10 text-amber-500' : 'border-stone-700 text-stone-400 hover:bg-stone-800'}`}
+                     >
+                       {m === 'local' ? 'Local (free)' : 'Participate (anchored)'}
+                     </button>
+                   ))}
                  </div>
                </div>
 

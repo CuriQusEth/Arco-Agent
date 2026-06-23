@@ -30,7 +30,12 @@ interface EscrowState {
   budgetAmount: string;
   deliverable: string;
   completionReason: string;
-  
+
+  // Mnemonic verifiable-memory pointers (optional, additive)
+  deliverableURI?: string;   // recall handle for the submitted deliverable memory
+  deliverableHash?: string;  // blake3 content_hash (== on-chain bytes32 sans 0x)
+  completionURI?: string;    // recall handle for the evaluator rationale memory
+
   // Custom Escrow Address
   escrowAddress: string;
 
@@ -56,6 +61,10 @@ interface AppStore {
   setMyJobs: (wallet: string, jobIds: string[]) => void;
   notificationsEnabled: boolean;
   setNotificationsEnabled: (enabled: boolean) => void;
+
+  // Mnemonic verifiable-memory write mode
+  mnemonicMode: 'local' | 'participate';
+  setMnemonicMode: (mode: 'local' | 'participate') => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -66,6 +75,8 @@ export const useAppStore = create<AppStore>()(
       transactions: [],
       myJobs: {},
       notificationsEnabled: false,
+      mnemonicMode: 'local',
+      setMnemonicMode: (mnemonicMode) => set({ mnemonicMode }),
       addTransaction: (tx) => set((state) => ({ transactions: [tx, ...state.transactions] })),
       updateTransaction: (hash, updates) => set((state) => ({
         transactions: state.transactions.map((t) => (t.hash === hash ? { ...t, ...updates } : t)),
@@ -87,7 +98,11 @@ export const useAppStore = create<AppStore>()(
     {
       name: 'arco-agent-store',
       storage: customStorage,
-      partialize: (state) => ({ transactions: state.transactions, myJobs: state.myJobs }),
+      partialize: (state) => ({
+        transactions: state.transactions,
+        myJobs: state.myJobs,
+        mnemonicMode: state.mnemonicMode,
+      }),
     }
   )
 );

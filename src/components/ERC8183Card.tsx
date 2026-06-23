@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
+import { useMnemonic } from '../hooks/useMnemonic';
+import { ConfirmationRequiredError } from '../lib/mnemonicClient';
 import { useEscrowStore, useAppStore } from '../store';
 import { addresses, escrowAbi, identityAbi, arcTestnet, erc20Abi } from '../lib/contracts';
 import { getAddress, isAddress, parseUnits, formatUnits, decodeEventLog } from 'viem';
@@ -7,8 +9,25 @@ import { CheckCircle2, Circle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export function ERC8183Card() {
   const { walletAddress, nativeBalance, usdcBalance, getPublicClient, getWalletClient, switchToArcTestnet } = useWallet();
-  const { addTransaction, updateTransaction, addMyJob } = useAppStore();
+  const { addTransaction, updateTransaction, addMyJob, mnemonicMode } = useAppStore();
+  const { signForChain } = useMnemonic();
   const store = useEscrowStore();
+
+  // Sign content as a verifiable Mnemonic memory; returns the on-chain bytes32
+  // (blake3 hash) + a resolvable recall URI. Surfaces the participate-mode
+  // confirmation gate as a clear message (local mode never hits it).
+  const signMemo = async (content: string) => {
+    try {
+      return await signForChain(content, { mode: mnemonicMode });
+    } catch (e: any) {
+      if (e instanceof ConfirmationRequiredError) {
+        throw new Error(
+          'This is a public, anchored (paid) write. Switch to Local mode in Settings, or confirm publishing.',
+        );
+      }
+      throw new Error(e?.message || 'Failed to sign verifiable memory');
+    }
+  };
   
   const [loadingStep, setLoadingStep] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -456,63 +475,82 @@ export function ERC8183Card() {
     }
   };
 
-  const handleSubmitWork = () => {
+  const handleSubmitWork = async () => {
     if (walletAddress?.toLowerCase() !== store.provider?.toLowerCase()) {
       setErrorMsg(`Only the Provider (${store.provider}) can submit work.`);
       return;
     }
-    executeTx(3, 'Submit Work', async () => {
-      let deliverableBytes = store.deliverable?.trim();
-      if (!deliverableBytes) {
-        throw new Error("Deliverable payload is required (e.g. IPFS hash)");
-      }
-      if (!deliverableBytes.startsWith('0x') || deliverableBytes.length !== 66) {
-         if (!deliverableBytes.startsWith('0x')) {
-            deliverableBytes = "0x" + Array.from(new TextEncoder().encode(deliverableBytes))
-               .map(b => b.toString(16).padStart(2, '0')).join('').padEnd(64, '0').slice(0, 64);
-         } else {
-            deliverableBytes = deliverableBytes.padEnd(66, '0').slice(0, 66);
-         }
-      }
-         
-      return {
-        address: getAddress(sanitizeInput(store.escrowAddress)),
-        abi: escrowAbi,
-        functionName: 'submit',
-        args: [getValidatedJobId(), deliverableBytes as `0x${string}`, '0x']
-      };
-    }, async () => {
+    const deliverable = store.deliverable?.trim();
+    if (!deliverable) {
+      setErrorMsg("Deliverable payload is required (e.g. IPFS hash or description)");
+      return;
+    }
+
+    // Sign the deliverable as a verifiable memory; the returned blake3
+    // content_hash (32 bytes) is written on-chain as the deliverable bytes32.
+    let signed;
+    try {
+      setErrorMsg(null);
+      setLoadingStep(3);
+      const memo = `arco/erc8183 job:${store.jobId} role:provider deliverable\n${deliverable}`;
+      signed = await signMemo(memo);
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Failed to sign deliverable');
+      setLoadingStep(null);
+      return;
+    }
+
+    store.setJobData({
+      deliverableURI: signed.uri,
+      deliverableHash: signed.result.content_hash,
+    });
+
+    executeTx(3, 'Submit Work', async () => ({
+      address: getAddress(sanitizeInput(store.escrowAddress)),
+      abi: escrowAbi,
+      functionName: 'submit',
+      args: [getValidatedJobId(), signed.bytes32, '0x'],
+    }), async () => {
        store.setStep(4);
        await checkJobStatus();
     });
   };
 
-  const handleCompleteJob = () => {
+  const handleCompleteJob = async () => {
     const isClient = walletAddress?.toLowerCase() === store.client?.toLowerCase();
     const isEvaluator = walletAddress?.toLowerCase() === store.evaluator?.toLowerCase();
-    
+
     if (!isClient && !isEvaluator) {
       setErrorMsg(`Only the Client (${store.client}) or Evaluator (${store.evaluator}) can complete this job.`);
       return;
     }
-    executeTx(4, 'Complete Job', async () => {
-      let reasonBytes = "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
-      if (store.completionReason?.trim()) {
-         let rawReason = store.completionReason.trim();
-         if (!rawReason.startsWith('0x')) {
-             reasonBytes = ("0x" + Array.from(new TextEncoder().encode(rawReason))
-               .map(b => b.toString(16).padStart(2, '0')).join('')).padEnd(66, '0').slice(0, 66) as `0x${string}`;
-         } else {
-             reasonBytes = rawReason.padEnd(66, '0').slice(0, 66) as `0x${string}`;
-         }
+
+    // Sign the evaluator's rationale as a verifiable memory; the blake3 hash
+    // becomes the on-chain completion `reason` (zero bytes32 if no rationale).
+    let reasonBytes: `0x${string}` =
+      "0x0000000000000000000000000000000000000000000000000000000000000000";
+    if (store.completionReason?.trim()) {
+      try {
+        setErrorMsg(null);
+        setLoadingStep(4);
+        const memo =
+          `arco/erc8183 job:${store.jobId} role:evaluator decision\n${store.completionReason.trim()}`;
+        const signed = await signMemo(memo);
+        reasonBytes = signed.bytes32;
+        store.setJobData({ completionURI: signed.uri });
+      } catch (e: any) {
+        setErrorMsg(e?.message || 'Failed to sign completion rationale');
+        setLoadingStep(null);
+        return;
       }
-      return {
-        address: getAddress(sanitizeInput(store.escrowAddress)),
-        abi: escrowAbi,
-        functionName: 'complete',
-        args: [getValidatedJobId(), reasonBytes, '0x']
-      };
-    }, async () => {
+    }
+
+    executeTx(4, 'Complete Job', async () => ({
+      address: getAddress(sanitizeInput(store.escrowAddress)),
+      abi: escrowAbi,
+      functionName: 'complete',
+      args: [getValidatedJobId(), reasonBytes, '0x'],
+    }), async () => {
        store.setStep(5);
        await checkJobStatus();
     });

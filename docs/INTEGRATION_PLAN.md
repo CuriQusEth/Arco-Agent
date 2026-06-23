@@ -528,21 +528,22 @@ identity" is provable, not asserted.
 
 ## 17. Phased rollout / task checklist
 
-**Phase 1 — plumbing (no UX change to the happy path)**
-- [ ] `authHeaders.ts` (extract shared signed-challenge header builder)
-- [ ] `server.ts`: `mnemonicCall` + `/api/mnemonic/{sign,recall,verify}`
-- [ ] `mnemonicMap.ts` (`toBytes32`, `toRecallURI`) + unit tests
-- [ ] `mnemonicClient.ts`, `useMnemonic.ts`
-- [ ] `.env.example` + README `MNEMONIC_*` docs
+**Phase 1 — plumbing (no UX change to the happy path)** — ✅ implemented
+- [x] `authHeaders.ts` (shared signed-challenge header builder)
+- [x] `server.ts`: `mnemonicCall` + `/api/mnemonic/{sign,recall,verify}`
+- [x] `mnemonicMap.ts` (`toBytes32`, `toRecallURI`) + `test-mnemonic-map.ts`
+- [x] `mnemonicClient.ts`, `useMnemonic.ts`
+- [x] `.env.example` + README `MNEMONIC_*` docs
 
-**Phase 2 — wire writes + verify UI**
-- [ ] `handleSubmitWork` / `handleCompleteJob` sign before tx
-- [ ] `Reputation` / `Validation` sign before tx
-- [ ] Zustand fields (§10); "Verify" affordances (§9)
-- [ ] `SettingsModal` mode toggle (§11)
-- [ ] Participate confirmation ceremony (§12)
+**Phase 2 — wire writes + mode** — ✅ implemented
+- [x] `handleSubmitWork` / `handleCompleteJob` sign before tx
+- [x] `Reputation` / `Validation` sign before tx (hooks accept URI + hash)
+- [x] Zustand fields (§10: `deliverableURI/Hash`, `completionURI`, `mnemonicMode`)
+- [x] `SettingsModal` mode toggle (§11)
+- [x] Participate confirmation ceremony — server retry path (§12)
+- [ ] Read-side "Verify" affordances in `AgentProfile` / `JobFeed` (§9) — follow-up
 
-**Phase 3 — memory as a feature**
+**Phase 3 — memory as a feature** (not started)
 - [ ] Identity binding via ERC-8004 metadata (§13)
 - [ ] `recall`-powered "prior deliverables" search on `AgentProfile`
 - [ ] Per-agent memory timeline
