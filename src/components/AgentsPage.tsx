@@ -4,6 +4,7 @@ import { useAgentIdentity } from '../hooks/useAgentIdentity';
 import { useAgentReputation } from '../hooks/useAgentReputation';
 import { useAgentValidation } from '../hooks/useAgentValidation';
 import { useMnemonic } from '../hooks/useMnemonic';
+import { MnemonicVerify } from './MnemonicVerify';
 import { useAppStore } from '../store';
 import { addresses, reputationAbi, validationAbi } from '../lib/contracts';
 import { Shield, CheckCircle, XCircle, Search, Bot } from 'lucide-react';
@@ -252,6 +253,14 @@ function AgentProfile() {
                              {f.tag1 && <span className="bg-stone-800 px-1.5 py-0.5 rounded border border-stone-700">{f.tag1}</span>}
                              {f.tag2 && <span className="bg-stone-800 px-1.5 py-0.5 rounded border border-stone-700">{f.tag2}</span>}
                           </div>
+                       )}
+                       {f.feedbackHash &&
+                        f.feedbackHash !== '0x0000000000000000000000000000000000000000000000000000000000000000' && (
+                          <MnemonicVerify
+                            expectedHash={f.feedbackHash}
+                            uri={f.feedbackURI}
+                            query={`arco/erc8004 feedback agent:${agentId} ${f.tag1 || ''} ${f.tag2 || ''}`}
+                          />
                        )}
                     </div>
                  ))}

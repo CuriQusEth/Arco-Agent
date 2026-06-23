@@ -541,7 +541,8 @@ identity" is provable, not asserted.
 - [x] Zustand fields (§10: `deliverableURI/Hash`, `completionURI`, `mnemonicMode`)
 - [x] `SettingsModal` mode toggle (§11)
 - [x] Participate confirmation ceremony — server retry path (§12)
-- [ ] Read-side "Verify" affordances in `AgentProfile` / `JobFeed` (§9) — follow-up
+- [x] Read-side "Verify" affordances — `MnemonicVerify` in `AgentProfile`
+      feedback rows + in-session deliverable panel (§9)
 
 **Phase 3 — memory as a feature** (not started)
 - [ ] Identity binding via ERC-8004 metadata (§13)

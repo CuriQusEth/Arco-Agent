@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { useMnemonic } from '../hooks/useMnemonic';
 import { ConfirmationRequiredError } from '../lib/mnemonicClient';
+import { MnemonicVerify } from './MnemonicVerify';
 import { useEscrowStore, useAppStore } from '../store';
 import { addresses, escrowAbi, identityAbi, arcTestnet, erc20Abi } from '../lib/contracts';
 import { getAddress, isAddress, parseUnits, formatUnits, decodeEventLog } from 'viem';
@@ -795,12 +796,20 @@ export function ERC8183Card() {
                />
              </div>
              {store.step === 3 && (
-               <button 
+               <button
                  onClick={handleSubmitWork} disabled={loadingStep === 3 || timeRemaining === 0}
                  className={btnClass}
                >
                  {loadingStep === 3 ? 'Submitting...' : 'Submit Tx: Upload Result'}
                </button>
+             )}
+             {store.deliverableHash && (
+               <MnemonicVerify
+                 expectedHash={store.deliverableHash}
+                 uri={store.deliverableURI}
+                 query={`arco/erc8183 job:${store.jobId} deliverable`}
+                 label="Verify deliverable"
+               />
              )}
           </div>
         </div>
