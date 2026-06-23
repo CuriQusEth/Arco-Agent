@@ -5,10 +5,12 @@ import {
   mnemonicSign,
   mnemonicRecall,
   mnemonicVerify,
+  mnemonicWhoami,
   ConfirmationRequiredError,
   SignResult,
   RecallHit,
   VerifyResult,
+  WhoamiResult,
 } from '../lib/mnemonicClient';
 import { toBytes32, toRecallURI } from '../lib/mnemonicMap';
 
@@ -66,5 +68,10 @@ export function useMnemonic() {
     [auth],
   );
 
-  return { signForChain, recall, verify, isSigning, ConfirmationRequiredError };
+  const whoami = useCallback(
+    async (): Promise<WhoamiResult> => mnemonicWhoami(await auth()),
+    [auth],
+  );
+
+  return { signForChain, recall, verify, whoami, isSigning, ConfirmationRequiredError };
 }

@@ -253,6 +253,15 @@ async function startServer() {
     }
   });
 
+  app.get("/api/mnemonic/whoami", requireAuth, async (_req, res) => {
+    try {
+      const out = await mnemonicCall("mnemonic_whoami", {});
+      res.json(out);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Mnemonic whoami failed" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

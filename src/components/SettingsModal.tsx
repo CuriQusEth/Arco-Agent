@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useEscrowStore, useAppStore } from '../store';
-import { X, Check } from 'lucide-react';
+import { X, Check, Fingerprint } from 'lucide-react';
 import { addresses } from '../lib/contracts';
 import { isAddress, getAddress } from 'viem';
+import { useMnemonic } from '../hooks/useMnemonic';
 
 interface Props {
   isOpen: boolean;
@@ -12,9 +13,22 @@ interface Props {
 export function SettingsModal({ isOpen, onClose }: Props) {
   const store = useEscrowStore();
   const { notificationsEnabled, setNotificationsEnabled, mnemonicMode, setMnemonicMode } = useAppStore();
+  const { whoami } = useMnemonic();
   const [addrInput, setAddrInput] = useState(store.escrowAddress || addresses.defaultEscrow || '');
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
+  const [identity, setIdentity] = useState<string | null>(null);
+  const [identityErr, setIdentityErr] = useState('');
+
+  const loadIdentity = async () => {
+    setIdentityErr('');
+    try {
+      const me = await whoami();
+      setIdentity(me.pubkey_base58 || me.pubkey || me.did || JSON.stringify(me));
+    } catch (e: any) {
+      setIdentityErr(e?.message || 'Failed to load identity');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -104,6 +118,19 @@ export function SettingsModal({ isOpen, onClose }: Props) {
                        {m === 'local' ? 'Local (free)' : 'Participate (anchored)'}
                      </button>
                    ))}
+                 </div>
+                 <div className="mt-3">
+                   {identity ? (
+                     <div className="flex items-center gap-2 text-[11px] text-stone-400">
+                       <Fingerprint className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                       <span className="font-mono break-all">{identity}</span>
+                     </div>
+                   ) : (
+                     <button onClick={loadIdentity} className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-400 hover:text-amber-500">
+                       <Fingerprint className="w-3.5 h-3.5" /> Show memory identity
+                     </button>
+                   )}
+                   {identityErr && <div className="text-red-500 text-[10px] mt-1">{identityErr}</div>}
                  </div>
                </div>
 

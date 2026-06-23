@@ -83,6 +83,21 @@ export async function mnemonicRecall(auth: Auth, query: string): Promise<RecallH
   return Array.isArray(data) ? data : data.results || [];
 }
 
+export interface WhoamiResult {
+  pubkey?: string;
+  pubkey_base58?: string;
+  did?: string;
+  [k: string]: unknown;
+}
+
+export async function mnemonicWhoami(auth: Auth): Promise<WhoamiResult> {
+  const res = await fetch('/api/mnemonic/whoami', { method: 'GET', headers: auth });
+  if (!res.ok) {
+    throw new Error((await res.json().catch(() => ({}))).error || 'Mnemonic whoami failed');
+  }
+  return res.json();
+}
+
 export async function mnemonicVerify(
   auth: Auth,
   payload: { content?: string; expected_hash?: string; solana_tx?: string; arweave_tx?: string },

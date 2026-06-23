@@ -544,10 +544,15 @@ identity" is provable, not asserted.
 - [x] Read-side "Verify" affordances — `MnemonicVerify` in `AgentProfile`
       feedback rows + in-session deliverable panel (§9)
 
-**Phase 3 — memory as a feature** (not started)
-- [ ] Identity binding via ERC-8004 metadata (§13)
-- [ ] `recall`-powered "prior deliverables" search on `AgentProfile`
-- [ ] Per-agent memory timeline
+**Phase 3 — memory as a feature** — ✅ implemented
+- [x] Operator memory identity via `/api/mnemonic/whoami` + `useMnemonic.whoami`,
+      surfaced in `SettingsModal` (read-side identity display)
+- [x] `recall`-powered "prior deliverables" search on `AgentProfile`
+      (`AgentMemory` panel)
+- [x] Per-agent memory timeline (recalled signed memories with anchored badge)
+- [ ] Strong identity binding: publish the Mnemonic pubkey inside the ERC-8004
+      `metadataURI` JSON and cross-check on read (convention; needs a metadata
+      authoring step — follow-up)
 
 ---
 

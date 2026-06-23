@@ -267,8 +267,79 @@ function AgentProfile() {
                </div>
              </div>
            )}
+
+           <AgentMemory agentId={agentId} />
          </div>
        )}
+    </div>
+  );
+}
+
+/**
+ * Cross-job agent memory (ERC-8004 identity upgrade, MNEMONIC_EXTENSION §6).
+ * Semantically recalls the signed memories an agent accrued across jobs —
+ * deliverables, evaluations, validation evidence — by meaning, not by a static
+ * average over dead links.
+ */
+function AgentMemory({ agentId }: { agentId: string }) {
+  const { recall } = useMnemonic();
+  const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<{ content: string; content_hash: string; solana_tx?: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const run = async () => {
+    setLoading(true);
+    setSearched(true);
+    try {
+      const q = `arco agent:${agentId} ${query}`.trim();
+      setHits(await recall(q));
+    } catch (e) {
+      setHits([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-stone-900/30 p-5 rounded-xl border border-stone-800">
+      <h3 className="text-xs uppercase tracking-widest text-stone-500 mb-1 font-bold">Agent Memory (Mnemonic)</h3>
+      <p className="text-[11px] text-stone-500 mb-4">
+        Recall this agent's signed, anchored work history by meaning.
+      </p>
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          placeholder='e.g. "smart contract audit" or leave blank for all'
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && run()}
+          className="flex-1 rounded border border-stone-800 bg-stone-950 px-3 py-2 text-sm text-stone-200 outline-none focus:border-amber-600/50"
+        />
+        <button
+          onClick={run}
+          disabled={loading}
+          className="bg-stone-800 hover:bg-stone-700 px-4 rounded text-stone-200 flex items-center gap-2 text-sm disabled:opacity-50"
+        >
+          <Search className="w-4 h-4" /> {loading ? 'Recalling…' : 'Recall'}
+        </button>
+      </div>
+      {searched && hits.length === 0 && !loading && (
+        <div className="text-xs text-stone-500 italic">No signed memories recalled for this agent.</div>
+      )}
+      <div className="space-y-2">
+        {hits.map((h, i) => (
+          <div key={i} className="rounded border border-stone-800 bg-stone-900/50 p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-mono text-stone-500 break-all">{h.content_hash.slice(0, 24)}…</span>
+              {h.solana_tx && !h.solana_tx.startsWith('local:') && (
+                <span className="text-[9px] uppercase tracking-wider text-green-500 font-bold">anchored</span>
+              )}
+            </div>
+            <div className="whitespace-pre-wrap text-xs text-stone-300">{h.content}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
