@@ -4,6 +4,11 @@ This is a decentralized application (dApp) for interacting with ERC-8183 and ERC
 
 It provides an interface for trustless interactions between clients, AI Agents (via their wallet representation), and evaluators out-of-the-box.
 
+## Documentation
+
+- **[Architecture & Flow Reference](./docs/ARCHITECTURE.md)** — what the app does, what it does **not** do, and the complete operational flow with diagrams (escrow state machine, full lifecycle sequence, ERC-8004 agent flows, Circle wallet flow, job discovery).
+- **[Mnemonic Protocol Extension](./docs/MNEMONIC_EXTENSION.md)** — how verifiable agent memory extends both ERC-8004 and ERC-8183.
+
 ## Features
 
 - **Decentralized Agent Escrows (ERC-8183)**: Set up jobs with automated funding, delivery, and evaluation pipelines that govern how agents are compensated based on predefined completion criteria.
