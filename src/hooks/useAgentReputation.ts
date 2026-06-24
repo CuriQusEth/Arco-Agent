@@ -9,20 +9,29 @@ export function useAgentReputation() {
   const { addTransaction, updateTransaction } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
-  const giveFeedback = async (agentId: string, score: number, tag: string) => {
+  const giveFeedback = async (
+    agentId: string,
+    score: number,
+    tag: string,
+    feedbackURI?: string,
+    feedbackHash?: `0x${string}`,
+  ) => {
     setIsLoading(true);
     try {
       const publicClient = getPublicClient();
       const walletClient = getWalletClient();
       if (!publicClient || !walletClient || !walletAddress) throw new Error('Client not ready');
 
-      const feedbackHash = keccak256(toHex(tag || 'none'));
+      // Prefer the Mnemonic-backed verifiable hash/URI; fall back to the legacy
+      // keccak(tag) placeholder when no signed memory was supplied.
+      const resolvedHash = feedbackHash || keccak256(toHex(tag || 'none'));
+      const resolvedURI = feedbackURI || "";
 
       const { request } = await (publicClient as any).simulateContract({
         address: addresses.reputationRegistry,
         abi: reputationAbi,
         functionName: 'giveFeedback',
-        args: [BigInt(agentId), BigInt(score), 0, tag, "", "", "", feedbackHash],
+        args: [BigInt(agentId), BigInt(score), 0, tag, "", "", resolvedURI, resolvedHash],
         account: walletAddress as `0x${string}`
       });
 

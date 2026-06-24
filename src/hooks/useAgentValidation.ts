@@ -42,20 +42,29 @@ export function useAgentValidation() {
     }
   };
 
-  const submitValidationResponse = async (requestHash: string, responseScore: number, tag: string) => {
+  const submitValidationResponse = async (
+    requestHash: string,
+    responseScore: number,
+    tag: string,
+    responseURI?: string,
+    responseHash?: `0x${string}`,
+  ) => {
     setIsLoading(true);
     try {
       const publicClient = getPublicClient();
       const walletClient = getWalletClient();
       if (!publicClient || !walletClient || !walletAddress) throw new Error('Client not ready');
 
-      const valHash = keccak256(toHex(tag + responseScore));
+      // Prefer the Mnemonic-backed verifiable hash/URI for the validator report;
+      // fall back to the legacy keccak placeholder otherwise.
+      const resolvedHash = responseHash || keccak256(toHex(tag + responseScore));
+      const resolvedURI = responseURI || "";
 
       const { request } = await (publicClient as any).simulateContract({
         address: addresses.validationRegistry,
         abi: validationAbi,
         functionName: 'validationResponse',
-        args: [requestHash, responseScore, "", valHash, tag],
+        args: [requestHash, responseScore, resolvedURI, resolvedHash, tag],
         account: walletAddress as `0x${string}`
       });
 
